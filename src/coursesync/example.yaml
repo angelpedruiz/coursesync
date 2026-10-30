@@ -4,9 +4,9 @@ semester_start: 2026-09-14            # Monday of week 1: recordings and files a
 state_dir: ~/.local/state/coursesync  # ledger of what was fetched, saved browser login, run reports
 notify: true                          # desktop notification when something new arrives (notify-send)
 auto_login: false                     # true: log in with what `coursesync autologin` stored, ETH login page only
-videos: true                          # false: keep only transcripts. Also per course or per source. A video is still
-                                      # downloaded for transcribing, then deleted; with `transcribe` off, a source
-                                      # with `videos: false` fetches no recordings at all
+videos: true                          # false: keep only transcripts. Also per course or per source. Uses the site's own
+                                      # captions or Zoom transcript without fetching the video; only without those
+                                      # is a video downloaded, transcribed if `transcribe` is on, then deleted
 
 transcribe:                           # needs `pip install "coursesync[transcribe]"`
   enabled: false

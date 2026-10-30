@@ -11,6 +11,7 @@ from urllib.parse import unquote, urljoin
 
 from coursesync.sources.common import EXAM_RE, Ctx, Item
 from coursesync.sources.zoom import fetch_recording, table_zoom_rows
+from coursesync.transcribe import from_captions
 from coursesync.util import download, free_path, label, recording_tag, safe_name, semester_week, slug
 
 FILE_EXT = {".pdf", ".zip", ".ipynb", ".py", ".m", ".jl", ".cpp", ".hpp", ".h", ".tex", ".txt", ".md", ".pptx", ".docx",
@@ -25,8 +26,6 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
         ctx.report.problem(course.slug, f"{base}{src['path']}: {e}")
         return []
     keep_video = src.get("videos", course.videos)
-    if not ctx.wanted(keep_video):
-        return []
     seen = ctx.ledger.basenames(course.slug)
     folder = course.recordings
     items = []
@@ -39,7 +38,9 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
                 continue  # camera-only duplicate of a slides+camera recording
             want = int(src.get("resolution", 720))
             pick = next((t for t in tracks if (t.get("resolution") or [0, 0])[1] == want), tracks[0])
-            if pick["uri"].rsplit("/", 1)[-1] in seen:
+            caps = e["authorizedData"].get("captions") or []
+            captions_only = not keep_video and bool(caps)  # already a transcript: no video to fetch, no Whisper to run
+            if pick["uri"].rsplit("/", 1)[-1] in seen or not (captions_only or ctx.wanted(keep_video)):
                 continue
             day = dt.date.fromisoformat(e["syncedData"]["startTime"][:10])
             week = semester_week(day, course.semester_start)
@@ -50,17 +51,21 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
             if ctx.dry_run:
                 items.append(it)
                 continue
-            print(f"  {course.slug}: downloading recording of {day} (week {week})…", flush=True)
+            print(f"  {course.slug}: downloading {'captions' if captions_only else 'recording'} of {day} (week {week})…", flush=True)
             try:
-                download(pick["uri"], dest)
-                caps = e["authorizedData"].get("captions") or []
+                if not captions_only:
+                    download(pick["uri"], dest)
                 if caps:
                     download(caps[0]["uri"], dest.with_suffix(".vtt"))
             except OSError as err:
                 ctx.report.problem(course.slug, f"recording {day}: {err}")
                 continue
             ctx.ledger.record(course.slug, "tobira", pick["uri"], dest, week)
-            ctx.fetched_recording(course, dest, keep_video)
+            if captions_only:
+                out = from_captions(dest)
+                it.transcript, it.path = str(out), str(out.with_suffix(".md"))
+            else:
+                ctx.fetched_recording(course, dest, keep_video)
             items.append(it)
     return items
 

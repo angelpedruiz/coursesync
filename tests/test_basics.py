@@ -14,10 +14,10 @@ from coursesync.config import ConfigError, load, load_secrets
 from coursesync.ledger import Ledger
 from coursesync.run import run
 from coursesync.sources.common import Ctx
-from coursesync.sources.eth import sync_moodle
+from coursesync.sources.eth import sync_moodle, sync_tobira
 from coursesync.sources.web import sync_ethz_web, with_tables
 from coursesync.sources.zoom import readme_links, table_zoom_rows
-from coursesync.transcribe import transcribe
+from coursesync.transcribe import from_captions, transcribe
 from coursesync.util import label, parse_date, recording_tag, semester_week
 
 START = dt.date(2026, 9, 14)
@@ -121,6 +121,7 @@ def zoom_course(tmp_path, monkeypatch):
         return {}
 
     monkeypatch.setattr("coursesync.sources.zoom.zoom_download", fake_download)
+    monkeypatch.setattr("coursesync.sources.zoom.zoom_transcript", lambda url: None)
 
     def write(extra: str, source_extra: str = "", enabled: bool = True):
         f = tmp_path / "coursesync.yaml"
@@ -153,6 +154,16 @@ def test_transcript_only_removes_the_video(zoom_course, tmp_path, monkeypatch):
     assert sorted(p.name for p in rec.iterdir()) == ["L07.transcript.json", "L07.transcript.md"]
     assert [Path(i.path).name for i in man.items] == ["L07.transcript.md"]
     assert run(zoom_course("videos: false"), browser=False).items == []  # not fetched again
+
+
+def test_zoom_transcript_replaces_the_video(zoom_course, tmp_path, monkeypatch):
+    monkeypatch.setattr("coursesync.sources.zoom.zoom_transcript",
+                        lambda url: ([[6.26, 24.74, "Welcome"]], {"topic": "AISE"}))
+    man = run(zoom_course("videos: false", enabled=False), browser=False)
+    rec = tmp_path / "out" / "C1" / "Recordings"
+    assert sorted(p.name for p in rec.iterdir()) == ["L07.transcript.json", "L07.transcript.md"]
+    assert [Path(i.path).name for i in man.items] == ["L07.transcript.md"]
+    assert run(zoom_course("videos: false", enabled=False), browser=False).items == []
 
 
 def test_source_can_override_videos(zoom_course, tmp_path, monkeypatch):
@@ -266,6 +277,42 @@ def test_ethz_web_refuses_a_login_redirect(tmp_path, monkeypatch):
     assert [Path(i.path).name for i in items] == ["a.pdf"]
     assert (tmp_path / "c" / "files" / "a.pdf").read_bytes() == b"%PDF"
     assert problems == ["b.pdf: HTTP 302"] and not (tmp_path / "c" / "files" / "b.pdf").exists()
+
+
+def test_from_captions_makes_the_transcript(tmp_path):
+    (tmp_path / "L01.vtt").write_text("WEBVTT\n\nNOTE made by a machine\n\n00:00:06.396 --> 00:00:10.716 align:start\n"
+                                      "Welcome to the <b>class</b>.\nMy name is\n\n1\n01:00:00.000 --> 01:00:01.500\nBye\n")
+    out = from_captions(tmp_path / "L01.mp4")
+    assert json.loads(out.read_text())["segments"] == [[6.4, 10.72, "Welcome to the class. My name is"], [3600.0, 3601.5, "Bye"]]
+    assert "[00:00:06] Welcome to the class." in out.with_suffix(".md").read_text()
+
+
+@pytest.mark.parametrize("captions, videos, enabled, got", [
+    (True, False, True, ["L01.transcript.json", "L01.transcript.md", "L01.vtt"]),  # no video, no Whisper
+    (True, False, False, ["L01.transcript.json", "L01.transcript.md", "L01.vtt"]),
+    (False, False, False, []),
+    (True, True, False, ["L01.mp4", "L01.vtt"])])
+def test_tobira_captions_replace_the_video(tmp_path, monkeypatch, captions, videos, enabled, got):
+    def fake_download(url, dest, **kw):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHello\n" if dest.suffix == ".vtt" else "video")
+
+    monkeypatch.setattr("coursesync.sources.eth.download", fake_download)
+    event = {"__typename": "AuthorizedEvent", "title": "x", "syncedData": {"startTime": "2026-09-16T10:00:00"},
+             "authorizedData": {"tracks": [{"uri": "https://v.test/presentation-720.mp4", "mimetype": "video/mp4",
+                                            "resolution": [1280, 720]}],
+                                "captions": [{"uri": "https://v.test/c.vtt"}] if captions else []}}
+    tree = {"data": {"realmByPath": {"blocks": [{"series": {"entries": [event]}}]}}}
+    cfg_file = tmp_path / "coursesync.yaml"
+    cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ntranscribe: {{enabled: {str(enabled).lower()}}}\n"
+                        f"courses: {{c: {{videos: {str(videos).lower()}}}}}\n")
+    cfg = load(cfg_file)
+    ctx = Ctx(cfg, Ledger(tmp_path / "l.db"), None, browser=SimpleNamespace(tobira=lambda base, path: tree))
+    items = sync_tobira(ctx, cfg.course("c"), {"path": "/x"})
+    rec = tmp_path / "c" / "Recordings"
+    assert sorted(p.name for p in rec.iterdir() if p.name != ".") == got if got else not rec.exists()
+    assert len(items) == (1 if got else 0)
+    assert sync_tobira(ctx, cfg.course("c"), {"path": "/x"}) == []  # not fetched again
 
 
 class FakePage:

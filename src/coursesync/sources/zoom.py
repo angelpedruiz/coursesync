@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 from coursesync.sources.common import Ctx, Item, git
+from coursesync.transcribe import save_transcript, seconds
 from coursesync.util import UA, parse_date, recording_tag, semester_week
 
 
@@ -18,26 +19,40 @@ def _curl(args: list[str], jar: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True)
 
 
-def zoom_download(share_url: str, dest: Path) -> dict:
-    """Download a shared Zoom recording (the same steps the web player takes). Returns its meta (topic, start)."""
+def _play_info(share_url: str, jar: str) -> tuple[str, dict]:
+    """(host, what the web player gets for a shared recording)."""
     m = re.search(r"/rec/(share|play)/([^?]+)", share_url)
     if not m:
         raise OSError("not a Zoom recording link")
     kind, rid = m.groups()
     host = re.match(r"https://[^/]+", share_url).group(0)
+    _curl([share_url, "-o", "/dev/null"], jar)
+    if kind == "share":
+        r = _curl([f"{host}/nws/recording/1.0/play/share-info/{rid}"], jar)
+        redirect = ((json.loads(r.stdout or "{}").get("result") or {}).get("redirectUrl")) or ""
+        rid = redirect.rsplit("/", 1)[-1].split("?")[0]
+        if not rid:
+            raise OSError("no play id (link expired, or the recording needs a login)")
+        _curl([f"{host}/rec/play/{rid}", "-o", "/dev/null"], jar)
+    r = _curl(["-H", f"Referer: {host}/rec/play/{rid}",
+               f"{host}/nws/recording/1.0/play/info/{rid}?canPlayFromShare=true&from=share_recording_detail"
+               "&continueMode=true&componentName=rec-play"], jar)
+    return host, json.loads(r.stdout or "{}").get("result") or {}
+
+
+def zoom_transcript(share_url: str) -> tuple[list, dict] | None:
+    """(segments, meta) of the transcript Zoom keeps with a shared recording, if it has one."""
     with tempfile.NamedTemporaryFile(suffix=".jar") as jar:
-        _curl([share_url, "-o", "/dev/null"], jar.name)
-        if kind == "share":
-            r = _curl([f"{host}/nws/recording/1.0/play/share-info/{rid}"], jar.name)
-            redirect = ((json.loads(r.stdout or "{}").get("result") or {}).get("redirectUrl")) or ""
-            rid = redirect.rsplit("/", 1)[-1].split("?")[0]
-            if not rid:
-                raise OSError("no play id (link expired, or the recording needs a login)")
-            _curl([f"{host}/rec/play/{rid}", "-o", "/dev/null"], jar.name)
-        r = _curl(["-H", f"Referer: {host}/rec/play/{rid}",
-                   f"{host}/nws/recording/1.0/play/info/{rid}?canPlayFromShare=true&from=share_recording_detail"
-                   "&continueMode=true&componentName=rec-play"], jar.name)
-        res = json.loads(r.stdout or "{}").get("result") or {}
+        _, res = _play_info(share_url, jar.name)
+    segs = [[seconds(t["ts"]), seconds(t["end_ts"]), t["text"].strip()] for t in res.get("transcriptList") or []]
+    meet = res.get("meet") or {}
+    return (segs, {"topic": meet.get("topic"), "start": meet.get("meetingStartTimeStr")}) if segs else None
+
+
+def zoom_download(share_url: str, dest: Path) -> dict:
+    """Download a shared Zoom recording (the same steps the web player takes). Returns its meta (topic, start)."""
+    with tempfile.NamedTemporaryFile(suffix=".jar") as jar:
+        host, res = _play_info(share_url, jar.name)
         mp4 = res.get("viewMp4Url")
         if not mp4:
             raise OSError("no video url (link expired, or downloads disabled)")
@@ -53,7 +68,7 @@ def zoom_download(share_url: str, dest: Path) -> dict:
 
 def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, title="", tag: str | None = None,
                     day=None, keep_video=True) -> Item | None:
-    if ctx.ledger.has(course.slug, url) or not ctx.wanted(keep_video):
+    if ctx.ledger.has(course.slug, url):
         return None
     folder = course.recordings
     tag = tag or recording_tag(folder, week, tutorial, day, course.layout.get("recording_name"))
@@ -63,8 +78,17 @@ def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, ti
         return None
     if ctx.dry_run:
         return Item(course.slug, "recording", str(dest), url, week, title, "zoom", tutorial=tutorial, key=f"{tag}-rec")
-    folder.mkdir(parents=True, exist_ok=True)
     try:
+        found = None if keep_video else zoom_transcript(url)
+        if not found and not ctx.wanted(keep_video):
+            return None
+        folder.mkdir(parents=True, exist_ok=True)
+        if found:  # already a transcript: no video, no Whisper
+            segs, meta = found
+            out = save_transcript(dest, segs, {"duration": segs[-1][1], "language": None, "model": "zoom", "device": None})
+            ctx.ledger.record(course.slug, "zoom", url, out, week)
+            return Item(course.slug, "recording", str(out.with_suffix(".md")), url, week, title or meta.get("topic") or "",
+                        "zoom", tutorial=tutorial, key=f"{tag}-rec", transcript=str(out), extra=meta)
         meta = zoom_download(url, dest)
     except OSError as e:
         ctx.report.problem(course.slug, f"recording week {week} ({title or url[:40]}): {e}")

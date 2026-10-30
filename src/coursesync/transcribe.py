@@ -6,6 +6,7 @@ and <name>.transcript.md (readable, a timestamp every ~minute)."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -53,8 +54,32 @@ def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None =
         return out
     segments, info, model, device = _whisper(_audio(path), model, language)
     segs = [[round(s.start, 2), round(s.end, 2), s.text.strip()] for s in segments]
-    out.write_text(json.dumps({"segments": segs, "duration": info.duration, "language": info.language,
-                               "model": model, "device": device}))
+    return save_transcript(path, segs, {"duration": info.duration, "language": info.language, "model": model,
+                                        "device": device})
+
+
+def seconds(stamp: str) -> float:
+    parts = stamp.replace(",", ".").split(":")
+    return round(sum(float(p) * 60 ** i for i, p in enumerate(reversed(parts))), 2)
+
+
+def from_captions(path: Path) -> Path:
+    """The transcript of <name>.mp4 from its captions <name>.vtt, which needs neither the video nor Whisper."""
+    segs = []
+    for cue in path.with_suffix(".vtt").read_text().split("\n\n"):
+        lines = cue.strip().splitlines()
+        at = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        text = " ".join(re.sub(r"<[^>]+>", "", line).strip() for line in lines[at + 1:]) if at is not None else ""
+        if text:
+            start, end = lines[at].split("-->")
+            segs.append([seconds(start.strip()), seconds(end.split()[0]), text])
+    return save_transcript(path, segs, {"duration": segs[-1][1] if segs else 0, "language": None, "model": "captions",
+                                        "device": None})
+
+
+def save_transcript(path: Path, segs: list, meta: dict) -> Path:
+    out = path.with_name(path.stem + ".transcript.json")
+    out.write_text(json.dumps({"segments": segs, **meta}))
     lines, para, start = [f"# Transcript: {path.stem}", ""], [], None
     for s, _, text in segs:
         start = s if start is None else start
