@@ -52,8 +52,8 @@ def zoom_download(share_url: str, dest: Path) -> dict:
 
 
 def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, title="", tag: str | None = None,
-                    day=None) -> Item | None:
-    if ctx.ledger.has(course.slug, url):
+                    day=None, keep_video=True) -> Item | None:
+    if ctx.ledger.has(course.slug, url) or not ctx.wanted(keep_video):
         return None
     folder = course.recordings
     tag = tag or recording_tag(folder, week, tutorial, day, course.layout.get("recording_name"))
@@ -70,6 +70,7 @@ def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, ti
         ctx.report.problem(course.slug, f"recording week {week} ({title or url[:40]}): {e}")
         return None
     ctx.ledger.record(course.slug, "zoom", url, dest, week)
+    ctx.fetched_recording(course, dest, keep_video)
     return Item(course.slug, "recording", str(dest), url, week, title or meta.get("topic") or "", "zoom",
                 tutorial=tutorial, key=f"{tag}-rec", extra=meta)
 
@@ -103,7 +104,8 @@ def sync_zoom_readme(ctx: Ctx, course, src: dict) -> list[Item]:
         if link["extra_clip"]:
             slug = re.sub(r"[^a-z0-9]+", "-", link["title"].lower()).strip("-")[:30]
             tag = f"L{link['week']:02d}-{slug}"
-        it = fetch_recording(ctx, course, link["url"], link["week"], title=link["title"], tag=tag, day=link["date"])
+        it = fetch_recording(ctx, course, link["url"], link["week"], title=link["title"], tag=tag, day=link["date"],
+                             keep_video=src.get("videos", course.videos))
         if it:
             items.append(it)
     return items

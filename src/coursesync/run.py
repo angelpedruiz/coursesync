@@ -113,16 +113,26 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
             each({k: fn for k, fn in LOGIN.items() if LOGIN_SITE[k] in ready})
         finally:
             b.close()
-    if cfg.transcribe.get("enabled") and not dry_run:
+    if ctx.transcribing and not dry_run:
         from coursesync.transcribe import transcribe
-        for it in man.items:
-            if it.kind == "recording":
-                print(f"  transcribing {it.path}…", flush=True)
-                try:
-                    it.transcript = str(transcribe(Path(it.path), cfg.transcribe.get("model", "large-v3-turbo"),
-                                                   cfg.transcribe.get("language")))
-                except Exception as e:
-                    man.problem(it.course, f"transcription of {it.path}: {e}")
+        new = {it.path: it for it in man.items}
+        for course, path, keep_video in ledger.transcripts_due():  # also what an earlier run didn't finish
+            video = Path(path)
+            if not video.exists():  # removed by hand: nothing left to transcribe
+                ledger.transcript_done(path)
+                continue
+            print(f"  transcribing {path}…", flush=True)
+            try:
+                out = transcribe(video, cfg.transcribe.get("model", "large-v3-turbo"), cfg.transcribe.get("language"))
+            except Exception as e:  # the video stays until its transcript exists
+                man.problem(course, f"transcription of {path} (retried next run): {e}")
+                continue
+            if not keep_video:
+                video.unlink()
+            ledger.transcript_done(path)
+            if it := new.get(path):
+                it.transcript = str(out)
+                it.path = path if keep_video else str(out.with_suffix(".md"))
     # manifest + hook + notification
     mdir = cfg.state_dir / "runs"
     mdir.mkdir(parents=True, exist_ok=True)

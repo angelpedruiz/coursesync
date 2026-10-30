@@ -1,5 +1,6 @@
 import datetime as dt
 import http.server
+import subprocess
 import threading
 from pathlib import Path
 
@@ -94,6 +95,82 @@ def test_readme_and_table_parsing():
     <h3>Tutorials</h3><table><tr><td>2</td><td>September 28th</td><td><a href="https://ethz.zoom.us/rec/share/Y">R</a></td></tr></table>"""
     rows = table_zoom_rows(page, 2026)
     assert [(r["date"], r["tutorial"]) for r in rows] == [(dt.date(2026, 10, 22), False), (dt.date(2026, 9, 28), True)]
+
+
+@pytest.fixture
+def zoom_course(tmp_path, monkeypatch):
+    """A zoom_readme course with one recording, downloading and transcribing faked; returns a config writer."""
+    repo = tmp_path / "recordings"
+    repo.mkdir()
+    (repo / "README.md").write_text("[Week 07 (29.10.2026)](https://ethz.zoom.us/rec/share/AAA)\n")
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run([*git, "-C", str(repo), "add", "."], check=True)
+    subprocess.run([*git, "-C", str(repo), "commit", "-qm", "x"], check=True)
+
+    def fake_download(url, dest):
+        dest.write_bytes(b"video")
+        return {}
+
+    monkeypatch.setattr("coursesync.sources.zoom.zoom_download", fake_download)
+
+    def write(extra: str, source_extra: str = "", enabled: bool = True):
+        f = tmp_path / "coursesync.yaml"
+        f.write_text(f"""root: {tmp_path / 'out'}
+semester_start: 2026-09-14
+state_dir: {tmp_path / 'state'}
+notify: false
+transcribe: {{enabled: {str(enabled).lower()}}}
+courses:
+  c1:
+    folder: C1
+    {extra}
+    sources: [{{type: zoom_readme, repo: {repo}{source_extra}}}]
+""")
+        return load(f)
+    return write
+
+
+def fake_transcribe(path, model, language):
+    out = path.with_name(path.stem + ".transcript.json")
+    out.write_text("{}")
+    out.with_suffix(".md").write_text("# Transcript")
+    return out
+
+
+def test_transcript_only_removes_the_video(zoom_course, tmp_path, monkeypatch):
+    monkeypatch.setattr("coursesync.transcribe.transcribe", fake_transcribe)
+    man = run(zoom_course("videos: false"), browser=False)
+    rec = tmp_path / "out" / "C1" / "Recordings"
+    assert sorted(p.name for p in rec.iterdir()) == ["L07.transcript.json", "L07.transcript.md"]
+    assert [Path(i.path).name for i in man.items] == ["L07.transcript.md"]
+    assert run(zoom_course("videos: false"), browser=False).items == []  # not fetched again
+
+
+def test_source_can_override_videos(zoom_course, tmp_path, monkeypatch):
+    monkeypatch.setattr("coursesync.transcribe.transcribe", fake_transcribe)
+    run(zoom_course("videos: false", ", videos: true"), browser=False)
+    assert (tmp_path / "out" / "C1" / "Recordings" / "L07.mp4").exists()
+
+
+def test_failed_transcription_keeps_the_video_and_retries(zoom_course, tmp_path, monkeypatch):
+    def broken(*a):
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr("coursesync.transcribe.transcribe", broken)
+    man = run(zoom_course("videos: false"), browser=False)
+    video = tmp_path / "out" / "C1" / "Recordings" / "L07.mp4"
+    assert video.exists() and "retried next run" in man.problems[0]
+    monkeypatch.setattr("coursesync.transcribe.transcribe", fake_transcribe)
+    assert run(zoom_course("videos: false"), browser=False).problems == []
+    assert not video.exists() and video.with_name("L07.transcript.md").exists()
+
+
+def test_no_videos_and_no_transcripts_fetches_nothing_until_enabled(zoom_course, tmp_path, monkeypatch):
+    monkeypatch.setattr("coursesync.transcribe.transcribe", fake_transcribe)
+    assert run(zoom_course("videos: false", enabled=False), browser=False).items == []
+    assert not (tmp_path / "out").exists()
+    assert len(run(zoom_course("videos: false"), browser=False).items) == 1
 
 
 def test_ledger_ignores_zoom_starttime(tmp_path):

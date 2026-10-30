@@ -3,6 +3,9 @@ root: ~/Documents/Uni                 # one folder per course goes in here
 semester_start: 2026-09-14            # Monday of week 1: recordings and files are named by semester week
 state_dir: ~/.local/state/coursesync  # ledger of what was fetched, saved browser login, run reports
 notify: true                          # desktop notification when something new arrives (notify-send)
+videos: true                          # false: keep only transcripts. Also per course or per source. A video is still
+                                      # downloaded for transcribing, then deleted; with `transcribe` off, a source
+                                      # with `videos: false` fetches no recordings at all
 
 transcribe:                           # needs `pip install "coursesync[transcribe]"`
   enabled: false
@@ -28,6 +31,7 @@ courses:
 
   ml:
     folder: ML
+    videos: false                     # this course: transcripts only
     semester_start: 2026-09-21        # optional: this course's own week 1
     layout:                           # optional: how this course is organized (all keys optional)
       recordings: Lectures            # folder for recordings, default Recordings

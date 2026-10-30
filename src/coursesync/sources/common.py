@@ -38,6 +38,18 @@ class Ctx:
     browser: object | None = None
     dry_run: bool = False
 
+    @property
+    def transcribing(self) -> bool:
+        return bool(self.cfg.transcribe.get("enabled"))
+
+    def wanted(self, keep_video: bool) -> bool:
+        """Without the video or a transcript nothing would be left (not ledgered: enabling either fetches it later)."""
+        return keep_video or self.transcribing
+
+    def fetched_recording(self, course, dest: Path, keep_video: bool) -> None:
+        if self.transcribing:
+            self.ledger.queue_transcript(course.slug, dest, keep_video)
+
 
 def git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, env=SSH_ENV)

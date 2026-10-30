@@ -23,6 +23,9 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
     except Exception as e:
         ctx.report.problem(course.slug, f"{base}{src['path']}: {e}")
         return []
+    keep_video = src.get("videos", course.videos)
+    if not ctx.wanted(keep_video):
+        return []
     seen = ctx.ledger.basenames(course.slug)
     folder = course.recordings
     items = []
@@ -56,6 +59,7 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
                 ctx.report.problem(course.slug, f"recording {day}: {err}")
                 continue
             ctx.ledger.record(course.slug, "tobira", pick["uri"], dest, week)
+            ctx.fetched_recording(course, dest, keep_video)
             items.append(it)
     return items
 
@@ -150,7 +154,8 @@ def sync_moodle_zoom(ctx: Ctx, course, src: dict) -> list[Item]:
     items = []
     for row in table_zoom_rows(r.text(), course.semester_start.year):
         week = semester_week(row["date"], course.semester_start)
-        it = fetch_recording(ctx, course, row["url"], week, tutorial=row["tutorial"], title=row["title"], day=row["date"])
+        it = fetch_recording(ctx, course, row["url"], week, tutorial=row["tutorial"], title=row["title"], day=row["date"],
+                             keep_video=src.get("videos", course.videos))
         if it:
             items.append(it)
     return items

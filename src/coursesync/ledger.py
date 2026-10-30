@@ -14,6 +14,8 @@ class Ledger:
         self.con.execute("""CREATE TABLE IF NOT EXISTS fetched(
             url TEXT PRIMARY KEY, course TEXT NOT NULL, kind TEXT NOT NULL, path TEXT, name TEXT, week INTEGER,
             fetched_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+        self.con.execute("""CREATE TABLE IF NOT EXISTS to_transcribe(
+            path TEXT PRIMARY KEY, course TEXT NOT NULL, keep_video INTEGER NOT NULL)""")
 
     def urls(self, course: str) -> set[str]:
         return {r[0] for r in self.con.execute("SELECT url FROM fetched WHERE course=?", (course,))}
@@ -32,6 +34,19 @@ class Ledger:
         with self.con:
             self.con.execute("INSERT OR REPLACE INTO fetched(url,course,kind,path,name,week) VALUES (?,?,?,?,?,?)",
                              (url, course, kind, str(path) if path else None, path.name if path else None, week))
+
+    def queue_transcript(self, course: str, path: Path, keep_video: bool) -> None:
+        """Survives a failed or interrupted run: a recording stays queued until its transcript exists."""
+        with self.con:
+            self.con.execute("INSERT OR REPLACE INTO to_transcribe(path,course,keep_video) VALUES (?,?,?)",
+                             (str(path), course, keep_video))
+
+    def transcripts_due(self) -> list[tuple[str, str, bool]]:
+        return [(r["course"], r["path"], bool(r["keep_video"])) for r in self.con.execute("SELECT * FROM to_transcribe")]
+
+    def transcript_done(self, path: str) -> None:
+        with self.con:
+            self.con.execute("DELETE FROM to_transcribe WHERE path=?", (path,))
 
     def names_taken(self, course: str) -> set[str]:
         return {r[0] for r in self.con.execute("SELECT name FROM fetched WHERE course=? AND name IS NOT NULL", (course,))}

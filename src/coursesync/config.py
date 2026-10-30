@@ -26,6 +26,7 @@ class Course:
     name: str = ""
     semester_start: dt.date | None = None
     layout: dict = field(default_factory=dict)   # {recordings, recording_name, past_exams, sort: [{match, to}]}
+    videos: bool = True                # false: keep only the transcript of a recording (a source can override this)
 
     @property
     def recordings(self) -> Path:
@@ -93,6 +94,7 @@ def load(path: str | Path | None = None) -> Config:
             raise ConfigError(f"course {slug}: unknown layout keys {sorted(unknown)} (have: {sorted(LAYOUT_KEYS)})")
         courses[slug] = Course(slug=slug, folder=_expand(c.get("folder", slug), root), sources=c.get("sources") or [],
                                labels=c.get("labels") or [], name=c.get("name", slug), layout=layout,
+                               videos=c.get("videos", raw.get("videos", True)),
                                semester_start=dt.date.fromisoformat(str(c.get("semester_start", start))))
     state = _expand(raw.get("state_dir", "~/.local/state/coursesync"), base)
     return Config(path=path, root=root, semester_start=start, courses=courses, state_dir=state,
