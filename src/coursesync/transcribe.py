@@ -24,18 +24,34 @@ def _fmt(t: float) -> str:
     return f"{t // 3600:02d}:{t % 3600 // 60:02d}:{t % 60:02d}"
 
 
-def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None = None) -> Path:
+def _load_cuda_libs() -> None:
+    """The `gpu` extra's CUDA libraries are not on the loader's path: load them so CTranslate2 finds them by name."""
+    import ctypes
+    import importlib.util
+    for pkg, lib in (("nvidia.cublas", "libcublas.so.12"), ("nvidia.cudnn", "libcudnn.so.9")):
+        spec = importlib.util.find_spec(pkg)
+        if spec and spec.submodule_search_locations:
+            ctypes.CDLL(str(Path(spec.submodule_search_locations[0]) / "lib" / lib), mode=ctypes.RTLD_GLOBAL)
+
+
+def _whisper(audio, model: str, language: str | None) -> tuple[list, object, str, str]:
     from faster_whisper import WhisperModel
+    options = dict(language=language, vad_filter=True, beam_size=5, condition_on_previous_text=False)
+    try:
+        _load_cuda_libs()
+        segments, info = WhisperModel(model, device="cuda", compute_type="float16").transcribe(audio, **options)
+        return list(segments), info, model, "cuda"  # segments are lazy: a CUDA problem only shows up here
+    except Exception:  # no usable GPU: smaller model on CPU
+        model = "medium" if model.startswith("large") else model
+        segments, info = WhisperModel(model, device="cpu", compute_type="int8").transcribe(audio, **options)
+        return list(segments), info, model, "cpu"
+
+
+def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None = None) -> Path:
     out = path.with_name(path.stem + ".transcript.json")
     if out.exists():
         return out
-    try:
-        wm, device = WhisperModel(model, device="cuda", compute_type="float16"), "cuda"
-    except Exception:  # no GPU: smaller model on CPU
-        model = "medium" if model.startswith("large") else model
-        wm, device = WhisperModel(model, device="cpu", compute_type="int8"), "cpu"
-    segments, info = wm.transcribe(_audio(path), language=language, vad_filter=True, beam_size=5,
-                                   condition_on_previous_text=False)
+    segments, info, model, device = _whisper(_audio(path), model, language)
     segs = [[round(s.start, 2), round(s.end, 2), s.text.strip()] for s in segments]
     out.write_text(json.dumps({"segments": segs, "duration": info.duration, "language": info.language,
                                "model": model, "device": device}))

@@ -1,6 +1,8 @@
 import datetime as dt
 import http.server
+import json
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ from coursesync.run import run
 from coursesync.sources.common import Ctx
 from coursesync.sources.eth import sync_moodle
 from coursesync.sources.zoom import readme_links, table_zoom_rows
+from coursesync.transcribe import transcribe
 from coursesync.util import label, parse_date, recording_tag, semester_week
 
 START = dt.date(2026, 9, 14)
@@ -211,6 +214,27 @@ def test_moodle_names(tmp_path, names, expected):
     ctx = Ctx(cfg, Ledger(tmp_path / "l.db"), None, browser=browser, dry_run=True)
     items = sync_moodle(ctx, cfg.course("c"), {"id": 7, "base": FakeRequest.base, "names": names})
     assert [Path(i.path).name for i in items] == expected
+
+
+def test_transcribe_falls_back_to_cpu_when_the_gpu_fails_late(tmp_path, monkeypatch):
+    def lazy_segments(device):
+        if device == "cuda":
+            raise RuntimeError("Library libcublas.so.12 is not found or cannot be loaded")
+        yield SimpleNamespace(start=0.0, end=1.0, text=" hello ")
+
+    class FakeModel:
+        def __init__(self, model, device, compute_type):
+            self.model, self.device = model, device
+
+        def transcribe(self, audio, **kw):  # like the real one: loads fine, fails while iterating
+            return lazy_segments(self.device), SimpleNamespace(duration=1.0, language="en")
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeModel))
+    monkeypatch.setattr("coursesync.transcribe._audio", lambda path: [])
+    monkeypatch.setattr("coursesync.transcribe._load_cuda_libs", lambda: None)
+    out = transcribe(tmp_path / "L01.mp4", "large-v3-turbo", "en")
+    saved = json.loads(out.read_text())
+    assert (saved["device"], saved["model"], saved["segments"]) == ("cpu", "medium", [[0.0, 1.0, "hello"]])
 
 
 class FakePage:
