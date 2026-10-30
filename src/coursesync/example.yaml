@@ -1,0 +1,46 @@
+# coursesync configuration. Paths may use ~ and $VARS; relative paths are relative to `root`.
+root: ~/Documents/Uni                 # one folder per course goes in here
+semester_start: 2026-09-14            # Monday of week 1: recordings and files are named by semester week
+state_dir: ~/.local/state/coursesync  # ledger of what was fetched, saved browser login, run reports
+notify: true                          # desktop notification when something new arrives (notify-send)
+
+transcribe:                           # needs `pip install "coursesync[transcribe]"`
+  enabled: false
+  model: large-v3-turbo               # GPU; falls back to `medium` on CPU
+  language: en
+
+# Run a command after every run with new items; {manifest} is a JSON file listing them.
+# on_new: "my-notes-tool import {manifest}"
+
+courses:
+  algo:
+    name: Algorithms Lab
+    folder: Algo                      # → <root>/Algo/Recordings, /Moodle, /Website …
+    sources:
+      - type: tobira                  # video.ethz.ch series page (your ETH login)
+        path: /lectures/d-infk/2026/autumn/252-0000-00L
+      - type: moodle                  # all files of a Moodle course (your ETH login)
+        id: 12345
+    labels:                           # optional: week (and short name) from file names
+      - match: 'lecture[-_ ]?0?(\d+)'
+        week: '{1}'
+        name: 'L{week:02}-slides'
+
+  ml:
+    folder: ML
+    sources:
+      - type: web                     # every linked file on a page
+        url: https://example.ethz.ch/teaching/ml
+        match: '\.pdf$'               # which links (regex)
+        netrc: ~/.config/coursesync/ml.netrc   # if the files need the course password: `coursesync login ml --host example.ethz.ch`
+      - type: moodle_zoom             # Zoom recording links in a Moodle page's tables (lecture / tutorial tables)
+        id: 23456
+
+  sim:
+    folder: Sim
+    sources:
+      - type: git                     # the course repository, cloned/pulled into <folder>/<dest>
+        repo: git@gitlab.ethz.ch:sim_hs26/lecture.git
+        dest: lecture
+      - type: zoom_readme             # a repo whose README lists "[Week 03 (01.10.2026)](https://…zoom.us/rec/share/…)"
+        repo: git@gitlab.ethz.ch:sim_hs26/recordings.git

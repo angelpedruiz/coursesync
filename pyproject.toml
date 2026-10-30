@@ -1,0 +1,26 @@
+[project]
+name = "coursesync"
+version = "0.1.0"
+description = "Keep your university course material in sync: lecture recordings, Moodle files, course websites and git repos, sorted by course and week, optionally transcribed."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Miguel" }]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pyyaml>=6",
+    "playwright>=1.45",
+]
+
+[project.optional-dependencies]
+transcribe = ["faster-whisper>=1.0", "av>=12"]
+
+[project.scripts]
+coursesync = "coursesync.cli:app"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
