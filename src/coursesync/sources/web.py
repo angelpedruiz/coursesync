@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 
 from coursesync.sources.common import EXAM_RE, Ctx, Item
-from coursesync.util import download, get_text, label, safe_name, url_name
+from coursesync.util import download, free_path, get_text, label, safe_name, url_name
 
 
 def sync_web(ctx: Ctx, course, src: dict) -> list[Item]:
@@ -34,7 +34,7 @@ def sync_web(ctx: Ctx, course, src: dict) -> list[Item]:
             name = f"{m[0]}_{name}" if m else name
         if ctx.ledger.has(course.slug, u) or name in have:
             continue
-        dest = folder / ("past_exams" if exam else "") / name
+        dest = free_path(course.file_folder(folder, name, exam) / name)  # a sort rule can lead outside `have`
         week, key = label(name, course.labels)
         if ctx.dry_run:
             items.append(Item(course.slug, "file", str(dest), u, week, name, "web", exam, key=key))

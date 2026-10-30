@@ -90,15 +90,19 @@ def free_path(dest: Path) -> Path:
     return p
 
 
-def recording_tag(folder: Path, week: int, tutorial: bool = False) -> str:
-    """L07 for the week's first recording; L07b, L07c … for more sessions; L07-tut for a tutorial."""
-    base = f"L{week:02d}" + ("-tut" if tutorial else "")
+def recording_tag(folder: Path, week: int, tutorial: bool = False, day: dt.date | None = None,
+                  template: str | None = None) -> str:
+    """L07 for the week's first recording; L07b, L07c … for more sessions; L07-tut for a tutorial.
+
+    A template such as '{date}' or 'Lecture {week:02}' replaces the L07 part."""
+    stem = safe_name(template.format(week=week, date=day)) if template else f"L{week:02d}"
+    base = stem + ("-tut" if tutorial else "")
     stems = {p.stem for p in folder.glob("*")} if folder.exists() else set()
     taken = lambda t: any(s == t or s.startswith(t + "-") or s.startswith(t + ".") for s in stems)  # noqa: E731
     if not taken(base):
         return base
     for letter in "bcdefgh":
-        if not taken(base + letter) and not (not tutorial and taken(f"L{week:02d}{letter}")):
+        if not taken(base + letter) and not (not tutorial and taken(f"{stem}{letter}")):
             return base + letter
     raise ValueError(f"too many recordings in week {week}")
 

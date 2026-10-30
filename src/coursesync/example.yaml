@@ -28,6 +28,16 @@ courses:
 
   ml:
     folder: ML
+    semester_start: 2026-09-21        # optional: this course's own week 1
+    layout:                           # optional: how this course is organized (all keys optional)
+      recordings: Lectures            # folder for recordings, default Recordings
+      recording_name: '{date}'        # {date} and {week:02} work, default L07
+      past_exams: Exams               # folder in the course, default past_exams inside each source's folder
+      sort:                           # first match on the file name wins, even for exams
+        - match: 'slides|lecture'
+          to: Slides
+        - match: 'sheet|exercise'
+          to: Exercises/Sheets
     sources:
       - type: web                     # every linked file on a page
         url: https://example.ethz.ch/teaching/ml

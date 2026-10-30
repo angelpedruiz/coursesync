@@ -51,11 +51,12 @@ def zoom_download(share_url: str, dest: Path) -> dict:
     return {"topic": meet.get("topic"), "start": meet.get("meetingStartTimeStr")}
 
 
-def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, title="", tag: str | None = None) -> Item | None:
+def fetch_recording(ctx: Ctx, course, url: str, week: int, *, tutorial=False, title="", tag: str | None = None,
+                    day=None) -> Item | None:
     if ctx.ledger.has(course.slug, url):
         return None
-    folder = course.folder / "Recordings"
-    tag = tag or recording_tag(folder, week, tutorial)
+    folder = course.recordings
+    tag = tag or recording_tag(folder, week, tutorial, day, course.layout.get("recording_name"))
     dest = folder / f"{tag}.mp4"
     if dest.exists():  # never overwrite an existing recording
         ctx.report.problem(course.slug, f"{dest.name} already exists; skipped {url[:60]}…")
@@ -77,15 +78,15 @@ def readme_links(text: str, start) -> list[dict]:
     """Zoom links in a markdown list like '[Week 07 (29.10.2026)](https://…zoom.us/rec/share/…)'.
 
     Further links right under a week entry (extra clips) belong to that week."""
-    out, week = [], None
+    out, week, day = [], None, None
     for line in text.splitlines():
         for label, link in re.findall(r"\[([^\]]+)\]\((https://[^)]*zoom\.us/rec/[^)]+)\)", line):
             d = parse_date(label, start.year)
             if d and re.search(r"week|lecture|session", label, re.I):
-                week = semester_week(d, start)
-                out.append({"url": link, "week": week, "title": label, "extra_clip": False})
+                week, day = semester_week(d, start), d
+                out.append({"url": link, "week": week, "title": label, "extra_clip": False, "date": day})
             elif week is not None:
-                out.append({"url": link, "week": week, "title": label, "extra_clip": True})
+                out.append({"url": link, "week": week, "title": label, "extra_clip": True, "date": day})
     return out
 
 
@@ -97,12 +98,12 @@ def sync_zoom_readme(ctx: Ctx, course, src: dict) -> list[Item]:
         ctx.report.problem(course.slug, f"recordings repo {src['repo']}: git failed (offline or SSH key locked)")
         return []
     items = []
-    for link in readme_links(readme.read_text(), ctx.start):
+    for link in readme_links(readme.read_text(), course.semester_start):
         tag = None
         if link["extra_clip"]:
             slug = re.sub(r"[^a-z0-9]+", "-", link["title"].lower()).strip("-")[:30]
             tag = f"L{link['week']:02d}-{slug}"
-        it = fetch_recording(ctx, course, link["url"], link["week"], title=link["title"], tag=tag)
+        it = fetch_recording(ctx, course, link["url"], link["week"], title=link["title"], tag=tag, day=link["date"])
         if it:
             items.append(it)
     return items

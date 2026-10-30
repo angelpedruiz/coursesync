@@ -24,7 +24,7 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
         ctx.report.problem(course.slug, f"{base}{src['path']}: {e}")
         return []
     seen = ctx.ledger.basenames(course.slug)
-    folder = course.folder / "Recordings"
+    folder = course.recordings
     items = []
     for blk in ((j.get("data") or {}).get("realmByPath") or {}).get("blocks") or []:
         for e in sorted((blk.get("series") or {}).get("entries") or [], key=lambda e: (e.get("syncedData") or {}).get("startTime") or ""):
@@ -38,8 +38,8 @@ def sync_tobira(ctx: Ctx, course, src: dict) -> list[Item]:
             if pick["uri"].rsplit("/", 1)[-1] in seen:
                 continue
             day = dt.date.fromisoformat(e["syncedData"]["startTime"][:10])
-            week = semester_week(day, ctx.start)
-            tag = recording_tag(folder, week)
+            week = semester_week(day, course.semester_start)
+            tag = recording_tag(folder, week, day=day, template=course.layout.get("recording_name"))
             dest = folder / f"{tag}.mp4"
             it = Item(course.slug, "recording", str(dest), pick["uri"], week, e.get("title") or str(day), "tobira",
                       key=f"{tag}-rec", extra={"date": str(day)})
@@ -123,7 +123,7 @@ def sync_moodle(ctx: Ctx, course, src: dict) -> list[Item]:
         if u in seen or name in have:
             continue
         exam = bool(EXAM_RE.search(name))
-        dest = free_path(folder / ("past_exams" if exam else "") / name)
+        dest = free_path(course.file_folder(folder, name, exam) / name)
         week, key = label(name, course.labels)
         it = Item(course.slug, "file", str(dest), u, week, name, "moodle", exam, key=key)
         if ctx.dry_run:
@@ -148,9 +148,9 @@ def sync_moodle_zoom(ctx: Ctx, course, src: dict) -> list[Item]:
         ctx.report.problem(course.slug, f"Moodle page {src['id']}: HTTP {r.status}")
         return []
     items = []
-    for row in table_zoom_rows(r.text(), ctx.start.year):
-        week = semester_week(row["date"], ctx.start)
-        it = fetch_recording(ctx, course, row["url"], week, tutorial=row["tutorial"], title=row["title"])
+    for row in table_zoom_rows(r.text(), course.semester_start.year):
+        week = semester_week(row["date"], course.semester_start)
+        it = fetch_recording(ctx, course, row["url"], week, tutorial=row["tutorial"], title=row["title"], day=row["date"])
         if it:
             items.append(it)
     return items

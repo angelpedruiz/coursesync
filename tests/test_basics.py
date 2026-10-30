@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from coursesync.config import load
+from coursesync.config import ConfigError, load
 from coursesync.ledger import Ledger
 from coursesync.run import run
 from coursesync.sources.zoom import readme_links, table_zoom_rows
@@ -43,6 +43,43 @@ def test_recording_tags(tmp_path):
     assert recording_tag(rec, 7, tutorial=True) == "L07-tut"
     (rec / "L07b.mp4").touch()
     assert recording_tag(rec, 7) == "L07c"
+
+
+def test_recording_name_template(tmp_path):
+    day = dt.date(2026, 10, 22)
+    assert recording_tag(tmp_path, 7, day=day, template="{date}") == "2026-10-22"
+    assert recording_tag(tmp_path, 7, tutorial=True, template="Lecture {week:02}") == "Lecture 07-tut"
+    (tmp_path / "2026-10-22.mp4").touch()
+    assert recording_tag(tmp_path, 7, day=day, template="{date}") == "2026-10-22b"
+
+
+def test_course_layout(tmp_path):
+    cfg_file = tmp_path / "coursesync.yaml"
+    cfg_file.write_text(f"""root: {tmp_path}
+semester_start: 2026-09-14
+courses:
+  plain: {{}}
+  custom:
+    semester_start: 2026-09-21
+    layout:
+      recordings: Lectures
+      past_exams: Exams
+      sort: [{{match: 'slides', to: Slides/Weekly}}]
+""")
+    cfg = load(cfg_file)
+    plain, custom = cfg.course("plain"), cfg.course("custom")
+    base = tmp_path / "custom" / "Moodle"
+    assert plain.recordings == tmp_path / "plain" / "Recordings"
+    assert plain.semester_start == dt.date(2026, 9, 14) and custom.semester_start == dt.date(2026, 9, 21)
+    assert plain.file_folder(tmp_path / "plain" / "Moodle", "exam.pdf", True) == tmp_path / "plain" / "Moodle" / "past_exams"
+    assert custom.recordings == tmp_path / "custom" / "Lectures"
+    assert custom.file_folder(base, "exam.pdf", True) == tmp_path / "custom" / "Exams"
+    assert custom.file_folder(base, "Slides-03.pdf", False) == tmp_path / "custom" / "Slides" / "Weekly"
+    assert custom.file_folder(base, "exam-slides.pdf", True) == tmp_path / "custom" / "Slides" / "Weekly"  # a rule wins
+    assert custom.file_folder(base, "notes.pdf", False) == base
+    cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ncourses:\n  c: {{layout: {{recording: X}}}}\n")
+    with pytest.raises(ConfigError):
+        load(cfg_file)
 
 
 def test_readme_and_table_parsing():

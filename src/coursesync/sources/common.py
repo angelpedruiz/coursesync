@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime as dt
 import os
 import re
 import subprocess
@@ -38,10 +37,6 @@ class Ctx:
     report: object
     browser: object | None = None
     dry_run: bool = False
-
-    @property
-    def start(self) -> dt.date:
-        return self.cfg.semester_start
 
 
 def git(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
