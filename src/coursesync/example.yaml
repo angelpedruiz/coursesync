@@ -55,6 +55,14 @@ courses:
         check: https://ethz.ch/content/dam/ethz/…/lecture-01.pdf   # any protected file: tells if you're logged in
       - type: moodle_zoom             # Zoom recording links in a Moodle page's tables (lecture / tutorial tables)
         id: 23456
+      - type: vis                     # past exams + community answers from Community Solutions (ETH login)
+        site: https://exams.vis.ethz.ch   # or https://exams.vmp.ethz.ch
+        category: MachineLearning     # the slug in the category's URL
+        exclude: [HS24]               # exams whose PDFs you already have (answers are still fetched)
+        answers: 2                    # top answers per question to keep (0 = no answers)
+      - type: amiv                    # AMIV study documents (exams, summaries) for D-MAVT/D-ITET (AMIV login)
+        lecture: '^Machine Learning$' # regex on the lecture name
+        types: [exams, cheat sheets]
 
   sim:
     folder: Sim

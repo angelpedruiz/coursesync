@@ -12,6 +12,7 @@ from pathlib import Path
 from coursesync.config import Config, ConfigError, load_secrets
 from coursesync.ledger import Ledger
 from coursesync.sources.common import Ctx, Item
+from coursesync.sources.collections import sync_amiv, sync_community
 from coursesync.sources.eth import sync_moodle, sync_moodle_zoom, sync_tobira
 from coursesync.sources.gitrepo import sync_git
 from coursesync.sources.web import sync_ethz_web, sync_web
@@ -19,8 +20,10 @@ from coursesync.sources.zoom import sync_zoom_readme
 from coursesync.util import notify
 
 NO_LOGIN = {"git": sync_git, "zoom_readme": sync_zoom_readme, "web": sync_web}
-LOGIN = {"tobira": sync_tobira, "moodle": sync_moodle, "moodle_zoom": sync_moodle_zoom, "ethz_web": sync_ethz_web}
-LOGIN_SITE = {"tobira": "video portal", "moodle": "Moodle", "moodle_zoom": "Moodle", "ethz_web": "ETH website"}
+LOGIN = {"tobira": sync_tobira, "moodle": sync_moodle, "moodle_zoom": sync_moodle_zoom, "ethz_web": sync_ethz_web,
+         "vis": sync_community, "amiv": sync_amiv}
+LOGIN_SITE = {"tobira": "video portal", "moodle": "Moodle", "moodle_zoom": "Moodle", "ethz_web": "ETH website",
+              "vis": "exam collection", "amiv": "AMIV"}
 
 
 @dataclass
@@ -82,6 +85,7 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
     print("Sources without login…", flush=True)
     each(NO_LOGIN)
     login_sources = [(c, s) for c in courses for s in c.sources if s.get("type") in LOGIN]
+    LOGIN_SITE_DYNAMIC: dict = {}
     if browser and login_sources:
         from coursesync.browser import Browser
         print("Sources behind your login…", flush=True)
@@ -98,6 +102,15 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                 elif s["type"] == "ethz_web":
                     checks.setdefault(site, lambda url=s["check"]: b.file_ok(url))
                     pages.setdefault(site, s.get("login", s["check"]))  # redirects to the login page
+                elif s["type"] == "vis":
+                    base = s.get("site", "https://exams.vis.ethz.ch").rstrip("/")
+                    site = f"exam collection ({base.split('//')[1]})"
+                    LOGIN_SITE_DYNAMIC[(c.slug, id(s))] = site
+                    checks.setdefault(site, lambda base=base: b.community_ok(base))
+                    pages.setdefault(site, f"{base}/login")
+                elif s["type"] == "amiv":
+                    checks.setdefault(site, b.amiv_ok)
+                    pages.setdefault(site, "https://amiv.ethz.ch/en/studies/documents")
                 else:
                     base = s.get("base", "https://moodle-app2.let.ethz.ch")
                     checks.setdefault(site, lambda base=base: b.moodle_ok(base))
@@ -121,7 +134,14 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                 missing = [k for k, ok in checks.items() if not ok()]
             man.logins_needed = missing
             ready = {k for k in checks if k not in missing}
-            each({k: fn for k, fn in LOGIN.items() if LOGIN_SITE[k] in ready})
+            for c in courses:  # per source, so one site being logged out doesn't block the others
+                for s in c.sources:
+                    t = s.get("type")
+                    if t in LOGIN and LOGIN_SITE_DYNAMIC.get((c.slug, id(s)), LOGIN_SITE[t]) in ready:
+                        try:
+                            man.items += LOGIN[t](ctx, c, s)
+                        except Exception as e:
+                            man.problem(c.slug, f"{t}: {e}")
         finally:
             b.close()
     if ctx.transcribing and not dry_run:
