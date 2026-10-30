@@ -25,6 +25,8 @@ type is generic.
 - **Past exams** (`exam|final|midterm|…` in the name) go to `past_exams/`.
 - **Organized your way, per course.** An optional `layout` block changes a course's folders and recording
   names, and sorts files into subfolders by name. A course can also have its own `semester_start`.
+  `names: title` on a Moodle source names files after their Moodle title, so `02_handout.pdf` used twice
+  becomes `recitation-02.pdf` and `exercise-02.pdf`.
 - **Videos optional.** `videos: false` (for everything, a course or a source) keeps only the transcript. A video
   is still downloaded to transcribe it, and deleted once its transcript exists. If transcription fails, the
   video stays and the next run retries.

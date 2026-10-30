@@ -6,6 +6,7 @@ import datetime as dt
 import re
 import shutil
 import subprocess
+import unicodedata
 import urllib.request
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -44,6 +45,12 @@ def url_name(url: str) -> str:
 
 def safe_name(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "-", name).strip()[:180] or "file"
+
+
+def slug(text: str) -> str:
+    """Lowercase kebab-case without accents: 'Übung 03: Slides' → 'ubung-03-slides'."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
 
 
 def download(url: str, dest: Path, headers: dict | None = None, netrc: Path | None = None) -> None:

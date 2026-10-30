@@ -24,6 +24,7 @@ courses:
         path: /lectures/d-infk/2026/autumn/252-0000-00L
       - type: moodle                  # all files of a Moodle course (your ETH login)
         id: 12345
+        names: title                  # optional: name files after their Moodle title (recitation-02.pdf)
     labels:                           # optional: week (and short name) from file names
       - match: 'lecture[-_ ]?0?(\d+)'
         week: '{1}'

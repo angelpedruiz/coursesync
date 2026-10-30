@@ -6,11 +6,12 @@ import datetime as dt
 import html
 import re
 import time
+from pathlib import Path
 from urllib.parse import unquote, urljoin
 
 from coursesync.sources.common import EXAM_RE, Ctx, Item
 from coursesync.sources.zoom import fetch_recording, table_zoom_rows
-from coursesync.util import download, free_path, label, recording_tag, safe_name, semester_week
+from coursesync.util import download, free_path, label, recording_tag, safe_name, semester_week, slug
 
 FILE_EXT = {".pdf", ".zip", ".ipynb", ".py", ".m", ".jl", ".cpp", ".hpp", ".h", ".tex", ".txt", ".md", ".pptx", ".docx",
             ".csv", ".mat", ".npy", ".npz", ".png", ".jpg"}
@@ -68,21 +69,22 @@ def _links(page: str) -> list[str]:
     return [html.unescape(u) for u in re.findall(r'href="([^"]+)"', page)]
 
 
-def moodle_files(ctx: Ctx, base: str, course_id: int) -> dict[str, str]:
-    """{file url without query: file name} for every file of a Moodle course (sections, labels, resources, folders)."""
+def moodle_files(ctx: Ctx, base: str, course_id: int) -> dict[str, tuple[str, str | None]]:
+    """{file url without query: (file name, title on Moodle or None)} for every file of a Moodle course."""
     req = ctx.browser.ctx.request
-    out: dict[str, str] = {}
+    out: dict[str, tuple[str, str | None]] = {}
     queue = [f"{base}/course/view.php?id={course_id}", f"{base}/course/resources.php?id={course_id}"]
     done: set[str] = set()
+    titles: dict[str, str] = {}
 
-    def add(u: str):
+    def add(u: str, title: str | None = None):
         clean = u.split("?")[0]
         if "/pluginfile.php/" not in clean or re.search(
                 r"/(user|theme|core|core_admin|course/overviewfiles|course/summary|block_\w+)/|favicon|logo", clean, re.I):
             return
         name = unquote(clean.rsplit("/", 1)[-1])
-        if "." + name.rsplit(".", 1)[-1].lower() in FILE_EXT:
-            out[clean] = name
+        if "." + name.rsplit(".", 1)[-1].lower() in FILE_EXT and (title or clean not in out):
+            out[clean] = name, title
 
     while queue:
         url = queue.pop(0)
@@ -92,6 +94,8 @@ def moodle_files(ctx: Ctx, base: str, course_id: int) -> dict[str, str]:
         r = req.get(url)
         if not r.ok:
             continue
+        for link, title in re.findall(r'href="([^"]+)"[^>]*class="activityname"[^>]*>([^<]+)<', r.text()):
+            titles[html.unescape(link)] = html.unescape(title).strip()
         for u in _links(r.text()):
             u = urljoin(base, u).split("#")[0]
             if "/pluginfile.php/" in u:
@@ -103,11 +107,11 @@ def moodle_files(ctx: Ctx, base: str, course_id: int) -> dict[str, str]:
                 rr = req.get(u + "&redirect=1", max_redirects=0)
                 loc = rr.headers.get("location") or ""
                 if "/pluginfile.php/" in loc:
-                    add(urljoin(base, loc))
+                    add(urljoin(base, loc), titles.get(u))
                 elif rr.ok:
                     for v in _links(rr.text()):
                         if "/pluginfile.php/" in v:
-                            add(urljoin(base, v))
+                            add(urljoin(base, v), titles.get(u))
     return out
 
 
@@ -122,7 +126,9 @@ def sync_moodle(ctx: Ctx, course, src: dict) -> list[Item]:
     have = {p.name for p in folder.rglob("*") if p.is_file()} if folder.exists() else set()
     seen = ctx.ledger.bases(course.slug)
     items = []
-    for u, name in files.items():
+    for u, (name, title) in files.items():
+        if src.get("names") == "title" and title:  # file names on Moodle often repeat across sections, titles don't
+            name = slug(title) + Path(name).suffix.lower()
         name = safe_name(name)
         if u in seen or name in have:
             continue

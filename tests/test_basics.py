@@ -3,12 +3,15 @@ import http.server
 import subprocess
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from coursesync.config import ConfigError, load
 from coursesync.ledger import Ledger
 from coursesync.run import run
+from coursesync.sources.common import Ctx
+from coursesync.sources.eth import sync_moodle
 from coursesync.sources.zoom import readme_links, table_zoom_rows
 from coursesync.util import label, parse_date, recording_tag, semester_week
 
@@ -171,6 +174,42 @@ def test_no_videos_and_no_transcripts_fetches_nothing_until_enabled(zoom_course,
     assert run(zoom_course("videos: false", enabled=False), browser=False).items == []
     assert not (tmp_path / "out").exists()
     assert len(run(zoom_course("videos: false"), browser=False).items) == 1
+
+
+class FakeResponse:
+    def __init__(self, text="", location=None):
+        self.ok, self.status, self._text = True, 200, text
+        self.headers = {"location": location} if location else {}
+
+    def text(self):
+        return self._text
+
+
+class FakeRequest:
+    """A Moodle course whose two resources share one file name."""
+    base = "https://moodle.test"
+
+    def get(self, url, **kw):
+        files = {"1": "content/1/02_handout.pdf", "2": "content/2/02_handout.pdf"}
+        if url.endswith("/course/resources.php?id=7"):
+            return FakeResponse("".join(f'<a href="{self.base}/mod/resource/view.php?id={i}" class="activityname">{t}</a>'
+                                        for i, t in (("1", "Recitation 02"), ("2", "Exercise 02: Lösung"))))
+        if "redirect=1" in url:
+            i = url.split("id=")[1].split("&")[0]
+            return FakeResponse(location=f"{self.base}/pluginfile.php/{i}/mod_resource/{files[i]}")
+        return FakeResponse()
+
+
+@pytest.mark.parametrize("names, expected", [(None, ["02_handout.pdf", "02_handout.pdf"]),
+                                             ("title", ["recitation-02.pdf", "exercise-02-losung.pdf"])])
+def test_moodle_names(tmp_path, names, expected):
+    cfg_file = tmp_path / "coursesync.yaml"
+    cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ncourses: {{c: {{}}}}\n")
+    cfg = load(cfg_file)
+    browser = SimpleNamespace(ctx=SimpleNamespace(request=FakeRequest()))
+    ctx = Ctx(cfg, Ledger(tmp_path / "l.db"), None, browser=browser, dry_run=True)
+    items = sync_moodle(ctx, cfg.course("c"), {"id": 7, "base": FakeRequest.base, "names": names})
+    assert [Path(i.path).name for i in items] == expected
 
 
 def test_ledger_ignores_zoom_starttime(tmp_path):
