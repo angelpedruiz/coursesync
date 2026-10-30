@@ -66,6 +66,7 @@ coursesync run --dry-run        # what would be fetched
 coursesync run                  # fetch (a login window opens if needed)
 coursesync status               # last run + what's tracked
 coursesync login ml --host example.ethz.ch   # store a course-website password once (netrc, 600)
+coursesync renumber             # apply `layout: number` prefixes to files you already have
 coursesync autologin            # store your ETH login for unattended runs (needs `auto_login: true`)
 coursesync timer install --at 19:00          # daily background sync (systemd user timer)
 coursesync import have.jsonl    # mark things you already have, when switching from another setup

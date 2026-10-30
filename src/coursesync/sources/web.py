@@ -32,7 +32,8 @@ def sync_web(ctx: Ctx, course, src: dict, fetch=None) -> list[Item]:
         ctx.report.problem(course.slug, f"{src['url']}: {e}")
         return []
     pattern = re.compile(src.get("match", r"\.pdf$"), re.I)
-    urls = sorted({urljoin(src["url"], h) for h in re.findall(r'href="([^"#]+)"', page) if pattern.search(h.split("?")[0])})
+    urls = list(dict.fromkeys(urljoin(src["url"], h) for h in re.findall(r'href="([^"#]+)"', page)  # keep the page's order
+                              if pattern.search(h.split("?")[0])))
     folder = course.folder / src.get("subdir", "Website")
     have = {p.name for p in folder.rglob("*") if p.is_file()} if folder.exists() else set()
     items = []
@@ -44,7 +45,7 @@ def sync_web(ctx: Ctx, course, src: dict, fetch=None) -> list[Item]:
             name = f"{m[0]}_{name}" if m else name
         if ctx.ledger.has(course.slug, u) or name in have:
             continue
-        dest = free_path(course.file_folder(folder, name, exam) / name)  # a sort rule can lead outside `have`
+        dest = free_path(course.numbered(course.file_folder(folder, name, exam) / name))  # a sort rule can leave `have`
         week, key = label(name, course.labels)
         if ctx.dry_run:
             items.append(Item(course.slug, "file", str(dest), u, week, name, "web", exam, key=key))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from pathlib import Path
 
@@ -34,6 +35,21 @@ class Ledger:
         with self.con:
             self.con.execute("INSERT OR REPLACE INTO fetched(url,course,kind,path,name,week) VALUES (?,?,?,?,?,?)",
                              (url, course, kind, str(path) if path else None, path.name if path else None, week))
+
+    def renumber(self, course) -> list[tuple[Path, Path]]:
+        """Give what was fetched for a course its `number` prefix, in fetch order, and remember the new paths."""
+        moved = []
+        rows = self.con.execute("SELECT url, path FROM fetched WHERE course=? AND path IS NOT NULL ORDER BY rowid",
+                                (course.slug,)).fetchall()
+        for url, path in rows:
+            old = Path(path)
+            new = course.numbered(old)
+            if new != old and old.exists() and not re.match(r"\d+-", old.name):
+                old.rename(new)
+                with self.con:
+                    self.con.execute("UPDATE fetched SET path=?, name=? WHERE url=?", (str(new), new.name, url))
+                moved.append((old, new))
+        return moved
 
     def queue_transcript(self, course: str, path: Path, keep_video: bool) -> None:
         """Survives a failed or interrupted run: a recording stays queued until its transcript exists."""

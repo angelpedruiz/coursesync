@@ -91,6 +91,28 @@ courses:
         load(cfg_file)
 
 
+def test_numbered_folders_sort_in_course_order_and_never_refetch(tmp_path):
+    cfg_file = tmp_path / "coursesync.yaml"
+    cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ncourses: {{c: {{layout: {{number: [slides]}}}}}}\n")
+    course = load(cfg_file).course("c")
+    slides, other = tmp_path / "c" / "slides", tmp_path / "c" / "other"
+    slides.mkdir(parents=True)
+    other.mkdir()
+    led = Ledger(tmp_path / "l.db")
+    for name in ("intro.pdf", "advanced.pdf"):
+        (slides / name).touch()
+        led.record("c", "moodle", f"https://x/{name}", slides / name)
+    (other / "z.pdf").touch()
+    led.record("c", "moodle", "https://x/z.pdf", other / "z.pdf")
+    assert [new.name for _, new in led.renumber(course)] == ["01-intro.pdf", "02-advanced.pdf"]
+    assert sorted(p.name for p in slides.iterdir()) == ["01-intro.pdf", "02-advanced.pdf"]
+    assert led.renumber(course) == []  # already done
+    assert led.has("c", "https://x/intro.pdf")
+    assert led.con.execute("SELECT path FROM fetched WHERE url='https://x/intro.pdf'").fetchone()[0] == str(slides / "01-intro.pdf")
+    assert course.numbered(slides / "new.pdf").name == "03-new.pdf"  # the next new file continues
+    assert course.numbered(other / "new.pdf").name == "new.pdf"
+
+
 def test_readme_and_table_parsing():
     md = """* [C++ Crash Course](https://ethz.zoom.us/rec/share/AAA)
   * [Week 03 (01.10.2026)](https://ethz.zoom.us/rec/share/BBB)

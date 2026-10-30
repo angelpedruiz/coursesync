@@ -99,6 +99,17 @@ def autologin():
     typer.echo(f"saved to {f}; set `auto_login: true` in your config to use it")
 
 
+@app.command()
+def renumber(config: ConfigOpt = None):
+    """Give files already fetched the NN- prefix of their course's `layout: number` folders. Nothing is fetched again."""
+    from coursesync.ledger import Ledger
+    cfg = _cfg(config)
+    led = Ledger(cfg.state_dir / "ledger.db")
+    for course in cfg.courses.values():
+        for old, new in led.renumber(course):
+            typer.echo(f"{course.slug}: {old.name} → {new.name}")
+
+
 @app.command("import")
 def import_ledger(file: Annotated[Path, typer.Argument(help="JSON lines: {url, course, kind, path?, week?}")],
                   config: ConfigOpt = None):

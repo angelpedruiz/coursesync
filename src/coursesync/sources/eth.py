@@ -138,7 +138,7 @@ def sync_moodle(ctx: Ctx, course, src: dict) -> list[Item]:
         if u in seen or name in have:
             continue
         exam = bool(EXAM_RE.search(name))
-        dest = free_path(course.file_folder(folder, name, exam) / name)
+        dest = free_path(course.numbered(course.file_folder(folder, name, exam) / name))
         week, key = label(name, course.labels)
         it = Item(course.slug, "file", str(dest), u, week, name, "moodle", exam, key=key)
         if ctx.dry_run:

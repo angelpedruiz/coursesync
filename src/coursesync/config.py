@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-LAYOUT_KEYS = {"recordings", "recording_name", "past_exams", "sort"}
+LAYOUT_KEYS = {"recordings", "recording_name", "past_exams", "sort", "number"}
 
 
 class ConfigError(ValueError):
@@ -40,6 +40,14 @@ class Course:
         if not exam:
             return base
         return self.folder / self.layout["past_exams"] if "past_exams" in self.layout else base / "past_exams"
+
+    def numbered(self, dest: Path) -> Path:
+        """dest with the folder's next NN- prefix, if `number` lists that folder, so files sort in course order."""
+        if not dest.parent.is_relative_to(self.folder) or \
+                dest.parent.relative_to(self.folder).as_posix() not in (self.layout.get("number") or []):
+            return dest
+        used = [int(m[1]) for p in dest.parent.glob("*") if (m := re.match(r"(\d+)-", p.name))]
+        return dest.with_name(f"{max(used, default=0) + 1:02d}-{dest.name}")
 
 
 @dataclass

@@ -40,6 +40,8 @@ courses:
       recordings: Lectures            # folder for recordings, default Recordings
       recording_name: '{date}'        # {date} and {week:02} work, default L07
       past_exams: Exams               # folder in the course, default past_exams inside each source's folder
+      number: [Slides]                # folders whose files get an NN- prefix, so they sort in course order
+                                      # (`coursesync renumber` applies it to files you already have)
       sort:                           # first match on the file name wins, even for exams
         - match: 'slides|lecture'
           to: Slides
