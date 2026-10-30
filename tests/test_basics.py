@@ -17,7 +17,7 @@ from coursesync.sources.common import Ctx
 from coursesync.sources.eth import sync_moodle, sync_tobira
 from coursesync.sources.web import sync_ethz_web, with_tables
 from coursesync.sources.zoom import readme_links, table_zoom_rows
-from coursesync.transcribe import from_captions, transcribe
+from coursesync.transcribe import from_captions, seconds, transcribe
 from coursesync.util import label, parse_date, recording_tag, semester_week
 
 START = dt.date(2026, 9, 14)
@@ -277,6 +277,10 @@ def test_ethz_web_refuses_a_login_redirect(tmp_path, monkeypatch):
     assert [Path(i.path).name for i in items] == ["a.pdf"]
     assert (tmp_path / "c" / "files" / "a.pdf").read_bytes() == b"%PDF"
     assert problems == ["b.pdf: HTTP 302"] and not (tmp_path / "c" / "files" / "b.pdf").exists()
+
+
+def test_timestamps():
+    assert seconds("00:00:06.262") == 6.26 and seconds("01:02:03,500") == 3723.5 and seconds("00:00:00.-304") == 0.3
 
 
 def test_from_captions_makes_the_transcript(tmp_path):

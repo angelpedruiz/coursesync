@@ -59,7 +59,7 @@ def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None =
 
 
 def seconds(stamp: str) -> float:
-    parts = stamp.replace(",", ".").split(":")
+    parts = stamp.replace(",", ".").replace(".-", ".").split(":")  # real captions can start at 00:00:00.-304
     return round(sum(float(p) * 60 ** i for i, p in enumerate(reversed(parts))), 2)
 
 
