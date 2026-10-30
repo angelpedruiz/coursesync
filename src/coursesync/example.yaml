@@ -11,6 +11,7 @@ videos: true                          # false: keep only transcripts. Also per c
 transcribe:                           # needs `pip install "coursesync[transcribe]"`
   enabled: false
   model: large-v3-turbo               # GPU; falls back to `medium` on CPU
+  batch_size: 8                       # chunks at once on the GPU: lower it if it runs out of memory
   language: en
 
 # Run a command after every run with new items; {manifest} is a JSON file listing them.

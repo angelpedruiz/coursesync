@@ -35,12 +35,13 @@ def _load_cuda_libs() -> None:
             ctypes.CDLL(str(Path(spec.submodule_search_locations[0]) / "lib" / lib), mode=ctypes.RTLD_GLOBAL)
 
 
-def _whisper(audio, model: str, language: str | None) -> tuple[list, object, str, str]:
-    from faster_whisper import WhisperModel
+def _whisper(audio, model: str, language: str | None, batch_size: int = 8) -> tuple[list, object, str, str]:
+    from faster_whisper import BatchedInferencePipeline, WhisperModel
     options = dict(language=language, vad_filter=True, beam_size=5, condition_on_previous_text=False)
     try:
         _load_cuda_libs()
-        segments, info = WhisperModel(model, device="cuda", compute_type="float16").transcribe(audio, **options)
+        gpu = BatchedInferencePipeline(WhisperModel(model, device="cuda", compute_type="float16"))
+        segments, info = gpu.transcribe(audio, batch_size=batch_size, **options)
         return list(segments), info, model, "cuda"  # segments are lazy: a CUDA problem only shows up here
     except Exception:  # no usable GPU: smaller model on CPU
         model = "medium" if model.startswith("large") else model
@@ -48,11 +49,11 @@ def _whisper(audio, model: str, language: str | None) -> tuple[list, object, str
         return list(segments), info, model, "cpu"
 
 
-def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None = None) -> Path:
+def transcribe(path: Path, model: str = "large-v3-turbo", language: str | None = None, batch_size: int = 8) -> Path:
     out = path.with_name(path.stem + ".transcript.json")
     if out.exists():
         return out
-    segments, info, model, device = _whisper(_audio(path), model, language)
+    segments, info, model, device = _whisper(_audio(path), model, language, batch_size)
     segs = [[round(s.start, 2), round(s.end, 2), s.text.strip()] for s in segments]
     return save_transcript(path, segs, {"duration": info.duration, "language": info.language, "model": model,
                                         "device": device})

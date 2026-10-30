@@ -140,7 +140,7 @@ courses:
     return write
 
 
-def fake_transcribe(path, model, language):
+def fake_transcribe(path, model, language, batch_size):
     out = path.with_name(path.stem + ".transcript.json")
     out.write_text("{}")
     out.with_suffix(".md").write_text("# Transcript")
@@ -244,7 +244,15 @@ def test_transcribe_falls_back_to_cpu_when_the_gpu_fails_late(tmp_path, monkeypa
         def transcribe(self, audio, **kw):  # like the real one: loads fine, fails while iterating
             return lazy_segments(self.device), SimpleNamespace(duration=1.0, language="en")
 
-    monkeypatch.setitem(sys.modules, "faster_whisper", SimpleNamespace(WhisperModel=FakeModel))
+    class FakeBatched:
+        def __init__(self, model):
+            self.model = model
+
+        def transcribe(self, audio, batch_size, **kw):
+            return self.model.transcribe(audio, **kw)
+
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        SimpleNamespace(WhisperModel=FakeModel, BatchedInferencePipeline=FakeBatched))
     monkeypatch.setattr("coursesync.transcribe._audio", lambda path: [])
     monkeypatch.setattr("coursesync.transcribe._load_cuda_libs", lambda: None)
     out = transcribe(tmp_path / "L01.mp4", "large-v3-turbo", "en")

@@ -154,7 +154,8 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                 continue
             print(f"  transcribing {path}…", flush=True)
             try:
-                out = transcribe(video, cfg.transcribe.get("model", "large-v3-turbo"), cfg.transcribe.get("language"))
+                out = transcribe(video, cfg.transcribe.get("model", "large-v3-turbo"), cfg.transcribe.get("language"),
+                                 cfg.transcribe.get("batch_size", 8))
             except Exception as e:  # the video stays until its transcript exists
                 man.problem(course, f"transcription of {path} (retried next run): {e}")
                 continue
