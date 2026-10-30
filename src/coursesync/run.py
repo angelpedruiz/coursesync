@@ -94,7 +94,7 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                 if s["type"] == "tobira":
                     base = s.get("base", "https://video.ethz.ch")
                     checks.setdefault(site, lambda base=base, p=s["path"]: b.tobira_ok(base, p))
-                    pages.setdefault(site, s.get("login", f"{base}/~login"))
+                    pages.setdefault(site, s.get("login", f"{base}/~session"))  # the portal's own Login button
                 else:
                     base = s.get("base", "https://moodle-app2.let.ethz.ch")
                     checks.setdefault(site, lambda base=base: b.moodle_ok(base))
