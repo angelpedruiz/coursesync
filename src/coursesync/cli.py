@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 
-from coursesync.config import ConfigError, default_path, load
+from coursesync.config import ConfigError, default_path, load, secrets_path
 
 app = typer.Typer(no_args_is_help=True, add_completion=False,
                   help="Keep your course material in sync: recordings, Moodle, course websites, git repos.")
@@ -80,6 +81,22 @@ def login(name: Annotated[str, typer.Argument(help="A name for this login, e.g. 
         os.umask(old)
     f.chmod(0o600)
     typer.echo(f"saved to {f}; use `netrc: {f}` in the web source")
+
+
+@app.command()
+def autologin():
+    """Store your ETH login for unattended runs (`auto_login: true`). You type it; it stays on this computer."""
+    f = secrets_path()
+    user = typer.prompt("ETH username")
+    pw = getpass.getpass("ETH password: ")
+    f.parent.mkdir(parents=True, exist_ok=True)
+    old = os.umask(0o077)
+    try:
+        f.write_text(yaml.safe_dump({"username": user, "password": pw}))
+    finally:
+        os.umask(old)
+    f.chmod(0o600)
+    typer.echo(f"saved to {f}; set `auto_login: true` in your config to use it")
 
 
 @app.command("import")

@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from coursesync.config import ConfigError, load
+from coursesync.browser import Browser
+from coursesync.config import ConfigError, load, load_secrets
 from coursesync.ledger import Ledger
 from coursesync.run import run
 from coursesync.sources.common import Ctx
@@ -210,6 +211,49 @@ def test_moodle_names(tmp_path, names, expected):
     ctx = Ctx(cfg, Ledger(tmp_path / "l.db"), None, browser=browser, dry_run=True)
     items = sync_moodle(ctx, cfg.course("c"), {"id": 7, "base": FakeRequest.base, "names": names})
     assert [Path(i.path).name for i in items] == expected
+
+
+class FakePage:
+    def __init__(self, url):
+        self.url, self.filled, self.closed = url, [], False
+
+    def goto(self, url, **kw):
+        pass
+
+    def fill(self, selector, value):
+        self.filled.append(value)
+
+    def click(self, selector):
+        pass
+
+    def wait_for_load_state(self, state):
+        pass
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.parametrize("url, typed", [("https://access.ethz.ch/idpauthapp/", ["me", "pw"]),
+                                        ("https://access.ethz.ch.evil.test/idpauthapp/", []),
+                                        ("https://moodle-app2.let.ethz.ch/my/", [])])
+def test_auto_login_types_only_on_the_eth_login_page(tmp_path, url, typed):
+    page = FakePage(url)
+    b = Browser(tmp_path)
+    b.ctx = SimpleNamespace(new_page=lambda: page)
+    b.auto_login("https://video.ethz.ch/~session", "me", "pw")
+    assert page.filled == typed and page.closed
+
+
+def test_secrets_must_be_private(tmp_path):
+    f = tmp_path / "secrets.yaml"
+    f.write_text("username: me\npassword: pw\n")
+    f.chmod(0o644)
+    with pytest.raises(ConfigError, match="chmod 600"):
+        load_secrets(f)
+    f.chmod(0o600)
+    assert load_secrets(f) == ("me", "pw")
+    with pytest.raises(ConfigError, match="autologin"):
+        load_secrets(tmp_path / "missing.yaml")
 
 
 def test_ledger_ignores_zoom_starttime(tmp_path):

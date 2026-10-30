@@ -52,6 +52,7 @@ class Config:
     transcribe: dict
     on_new: str | None = None
     notify: bool = True
+    auto_login: bool = False
 
     def course(self, slug: str) -> Course:
         if slug not in self.courses:
@@ -99,4 +100,22 @@ def load(path: str | Path | None = None) -> Config:
     state = _expand(raw.get("state_dir", "~/.local/state/coursesync"), base)
     return Config(path=path, root=root, semester_start=start, courses=courses, state_dir=state,
                   transcribe=raw.get("transcribe") or {"enabled": False}, on_new=raw.get("on_new"),
-                  notify=raw.get("notify", True))
+                  notify=raw.get("notify", True), auto_login=raw.get("auto_login", False))
+
+
+def secrets_path() -> Path:
+    return Path.home() / ".config" / "coursesync" / "secrets.yaml"
+
+
+def load_secrets(path: Path | None = None) -> tuple[str, str]:
+    """(username, password), refused unless only you can read the file."""
+    path = path or secrets_path()
+    if not path.exists():
+        raise ConfigError(f"no stored login at {path}: run `coursesync autologin`")
+    if path.stat().st_mode & 0o077:
+        raise ConfigError(f"{path} is readable by others: run `chmod 600 {path}`")
+    raw = yaml.safe_load(path.read_text()) or {}
+    try:
+        return str(raw["username"]), str(raw["password"])
+    except KeyError as e:
+        raise ConfigError(f"{path}: missing {e}") from None

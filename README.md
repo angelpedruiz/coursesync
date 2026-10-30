@@ -19,7 +19,9 @@ type is generic.
 - **Your login, never your password.** Sources behind the university login run in a Chrome session
   (Playwright) whose cookies are saved locally. When the login has expired, a normal browser window
   opens on the real login page; you log in, and the run continues by itself. coursesync never sees,
-  stores or types your password.
+  stores or types your password, unless you opt in: `coursesync autologin` keeps your ETH login in a private
+  file (plain text, mode 600) and `auto_login: true` types it on the ETH login page only, so runs need no input.
+  If that fails, for example at a second factor, you get the normal login window or notification instead.
 - **Named by week.** Recordings become `L07.mp4` (`L07b` for a second session, `L07-tut` for a tutorial)
   from their date and your `semester_start`. Files get a week from optional label rules.
 - **Past exams** (`exam|final|midterm|…` in the name) go to `past_exams/`.

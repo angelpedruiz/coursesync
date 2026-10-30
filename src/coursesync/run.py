@@ -9,7 +9,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from coursesync.config import Config
+from coursesync.config import Config, ConfigError, load_secrets
 from coursesync.ledger import Ledger
 from coursesync.sources.common import Ctx, Item
 from coursesync.sources.eth import sync_moodle, sync_moodle_zoom, sync_tobira
@@ -99,6 +99,14 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                     base = s.get("base", "https://moodle-app2.let.ethz.ch")
                     checks.setdefault(site, lambda base=base: b.moodle_ok(base))
                     pages.setdefault(site, s.get("login", f"{base}/auth/shibboleth/index.php"))
+            if cfg.auto_login and (expired := [k for k, ok in checks.items() if not ok()]):
+                try:
+                    username, password = load_secrets()
+                    for site in expired:
+                        b.auto_login(pages[site], username, password)
+                except Exception as e:  # only the type: never risk a password in a report
+                    msg = str(e) if isinstance(e, ConfigError) else f"{type(e).__name__} on the login page"
+                    man.problem("login", f"automatic login failed: {msg}")
             if interactive:
                 def opened(missing):
                     msg = f"Log in to {', '.join(missing)} in the browser window that opened (tick 'keep me signed in')."

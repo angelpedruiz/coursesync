@@ -2,7 +2,7 @@
 
 The cookies live in <state_dir>/browser/state.json (only readable by you). When the login has expired, a
 normal Chrome window opens on the real login page; you log in there and the run continues. Your password
-is never seen, stored or typed by coursesync.
+is never seen, stored or typed by coursesync, unless you opt in with `auto_login: true` and `coursesync autologin`.
 """
 
 from __future__ import annotations
@@ -11,7 +11,11 @@ import json
 import os
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
+WAYF_HOST = "wayf.switch.ch"
+ETH_IDP = "https://aai-logon.ethz.ch/idp/shibboleth"
+LOGIN_HOST = "access.ethz.ch"
 TOBIRA_QUERY = ("query($p:String!){ realmByPath(path:$p){ blocks { ... on SeriesBlock { series { entries { __typename "
                 "... on AuthorizedEvent { title syncedData { startTime } authorizedData { tracks { uri mimetype resolution } "
                 "captions { uri } } } } } } } } }")
@@ -73,6 +77,26 @@ class Browser:
         except Exception:
             return False
         return r.status == 200
+
+    def auto_login(self, url: str, username: str, password: str) -> None:
+        """Log in with stored credentials: typed only on the ETH login page, never on any other host."""
+        page = self.ctx.new_page()
+        try:
+            page.goto(url, wait_until="domcontentloaded")
+            if urlsplit(page.url).hostname == WAYF_HOST:  # the university picker keeps its real list hidden
+                page.eval_on_selector("#userIdPSelection", f"e => {{ e.value = '{ETH_IDP}' }}")
+                page.eval_on_selector("#IdPList", "f => { const s = document.createElement('input'); s.type = 'hidden';"
+                                                  " s.name = 'Select'; s.value = 'Select'; f.appendChild(s); f.submit() }")
+                page.wait_for_url(lambda u: urlsplit(u).hostname != WAYF_HOST)
+            page.wait_for_load_state("domcontentloaded")
+            if urlsplit(page.url).hostname != LOGIN_HOST:
+                return  # already signed in, or a page we don't know: not one to type a password into
+            page.fill("input[autocomplete=username]", username)
+            page.fill("input[type=password]", password)
+            page.click("button[type=submit]")
+            page.wait_for_load_state("networkidle")
+        finally:
+            page.close()
 
     def wait_for_logins(self, checks: dict, login_pages: dict, timeout_min: int, on_open=None) -> list[str]:
         """Open a visible window with the login pages of the failing checks; return what is still logged out."""
