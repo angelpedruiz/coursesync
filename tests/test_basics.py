@@ -15,6 +15,7 @@ from coursesync.ledger import Ledger
 from coursesync.run import run
 from coursesync.sources.common import Ctx
 from coursesync.sources.eth import sync_moodle
+from coursesync.sources.web import sync_ethz_web, with_tables
 from coursesync.sources.zoom import readme_links, table_zoom_rows
 from coursesync.transcribe import transcribe
 from coursesync.util import label, parse_date, recording_tag, semester_week
@@ -235,6 +236,33 @@ def test_transcribe_falls_back_to_cpu_when_the_gpu_fails_late(tmp_path, monkeypa
     out = transcribe(tmp_path / "L01.mp4", "large-v3-turbo", "en")
     saved = json.loads(out.read_text())
     assert (saved["device"], saved["model"], saved["segments"]) == ("cpu", "medium", [[0.0, 1.0, "hello"]])
+
+
+def test_with_tables_adds_cells_of_json_tables(monkeypatch):
+    table = {"thead": {"rows": [{"cells": [{"content": "Topic"}]}]},
+             "tbody": {"rows": [{"cells": [{"content": '<a href="/files/lecture-01.pdf">Slides</a>'}]}]}}
+    monkeypatch.setattr("coursesync.sources.web.get_text", lambda url: json.dumps(table))
+    page = with_tables('<div data-url="/x/par/table.tableComp.json"></div>', "https://example.test/x.html")
+    assert 'href="/files/lecture-01.pdf"' in page
+    assert with_tables("<p>no tables</p>", "https://example.test/x.html") == "<p>no tables</p>"
+
+
+def test_ethz_web_refuses_a_login_redirect(tmp_path, monkeypatch):
+    monkeypatch.setattr("coursesync.sources.web.get_text", lambda url: '<a href="https://ethz.ch/a.pdf">a</a> '
+                                                                       '<a href="https://ethz.ch/b.pdf">b</a>')
+    responses = {"https://ethz.ch/a.pdf": SimpleNamespace(status=200, body=lambda: b"%PDF"),
+                 "https://ethz.ch/b.pdf": SimpleNamespace(status=302, body=lambda: b"<html>login</html>")}
+    request = SimpleNamespace(get=lambda url, **kw: responses[url])
+    cfg_file = tmp_path / "coursesync.yaml"
+    cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ncourses: {{c: {{}}}}\n")
+    cfg = load(cfg_file)
+    problems = []
+    report = SimpleNamespace(problem=lambda course, msg: problems.append(msg))
+    ctx = Ctx(cfg, Ledger(tmp_path / "l.db"), report, browser=SimpleNamespace(ctx=SimpleNamespace(request=request)))
+    items = sync_ethz_web(ctx, cfg.course("c"), {"url": "https://ethz.ch/page.html", "subdir": "files"})
+    assert [Path(i.path).name for i in items] == ["a.pdf"]
+    assert (tmp_path / "c" / "files" / "a.pdf").read_bytes() == b"%PDF"
+    assert problems == ["b.pdf: HTTP 302"] and not (tmp_path / "c" / "files" / "b.pdf").exists()
 
 
 class FakePage:

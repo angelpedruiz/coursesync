@@ -14,13 +14,13 @@ from coursesync.ledger import Ledger
 from coursesync.sources.common import Ctx, Item
 from coursesync.sources.eth import sync_moodle, sync_moodle_zoom, sync_tobira
 from coursesync.sources.gitrepo import sync_git
-from coursesync.sources.web import sync_web
+from coursesync.sources.web import sync_ethz_web, sync_web
 from coursesync.sources.zoom import sync_zoom_readme
 from coursesync.util import notify
 
 NO_LOGIN = {"git": sync_git, "zoom_readme": sync_zoom_readme, "web": sync_web}
-LOGIN = {"tobira": sync_tobira, "moodle": sync_moodle, "moodle_zoom": sync_moodle_zoom}
-LOGIN_SITE = {"tobira": "video portal", "moodle": "Moodle", "moodle_zoom": "Moodle"}
+LOGIN = {"tobira": sync_tobira, "moodle": sync_moodle, "moodle_zoom": sync_moodle_zoom, "ethz_web": sync_ethz_web}
+LOGIN_SITE = {"tobira": "video portal", "moodle": "Moodle", "moodle_zoom": "Moodle", "ethz_web": "ETH website"}
 
 
 @dataclass
@@ -95,6 +95,9 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                     base = s.get("base", "https://video.ethz.ch")
                     checks.setdefault(site, lambda base=base, p=s["path"]: b.tobira_ok(base, p))
                     pages.setdefault(site, s.get("login", f"{base}/~session"))  # the portal's own Login button
+                elif s["type"] == "ethz_web":
+                    checks.setdefault(site, lambda url=s["check"]: b.file_ok(url))
+                    pages.setdefault(site, s.get("login", s["check"]))  # redirects to the login page
                 else:
                     base = s.get("base", "https://moodle-app2.let.ethz.ch")
                     checks.setdefault(site, lambda base=base: b.moodle_ok(base))

@@ -49,6 +49,10 @@ courses:
         url: https://example.ethz.ch/teaching/ml
         match: '\.pdf$'               # which links (regex)
         netrc: ~/.config/coursesync/ml.netrc   # if the files need the course password: `coursesync login ml --host example.ethz.ch`
+      - type: ethz_web                # a page on ethz.ch whose files need your ETH login
+        url: https://example.ethz.ch/education/lectures/ml.html
+        match: '/ml/.*\.(pdf|zip)$'
+        check: https://ethz.ch/content/dam/ethz/…/lecture-01.pdf   # any protected file: tells if you're logged in
       - type: moodle_zoom             # Zoom recording links in a Moodle page's tables (lecture / tutorial tables)
         id: 23456
 

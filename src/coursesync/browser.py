@@ -71,6 +71,13 @@ class Browser:
                    for e in (b.get("series") or {}).get("entries") or []]
         return any(e.get("__typename") == "AuthorizedEvent" for e in entries)
 
+    def file_ok(self, url: str) -> bool:
+        """A login-protected file answers directly instead of redirecting to the login page."""
+        try:
+            return self.ctx.request.get(url, max_redirects=0).status == 200
+        except Exception:
+            return False
+
     def moodle_ok(self, base: str) -> bool:
         try:
             r = self.ctx.request.get(f"{base}/my/", max_redirects=0)
