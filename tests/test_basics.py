@@ -191,11 +191,13 @@ class FakeResponse:
 
 
 class FakeRequest:
-    """A Moodle course whose two resources share one file name."""
+    """A Moodle course whose two resources share one file name, plus a file in a folder (no title of its own)."""
     base = "https://moodle.test"
 
     def get(self, url, **kw):
         files = {"1": "content/1/02_handout.pdf", "2": "content/2/02_handout.pdf"}
+        if url.endswith("/course/view.php?id=7"):
+            return FakeResponse(f'<a href="{self.base}/pluginfile.php/9/mod_folder/content/0/01 [Tutorial] Games.pdf">x</a>')
         if url.endswith("/course/resources.php?id=7"):
             return FakeResponse("".join(f'<a href="{self.base}/mod/resource/view.php?id={i}" class="activityname">{t}</a>'
                                         for i, t in (("1", "Recitation 02"), ("2", "Exercise 02: Lösung"))))
@@ -205,8 +207,9 @@ class FakeRequest:
         return FakeResponse()
 
 
-@pytest.mark.parametrize("names, expected", [(None, ["02_handout.pdf", "02_handout.pdf"]),
-                                             ("title", ["recitation-02.pdf", "exercise-02-losung.pdf"])])
+@pytest.mark.parametrize("names, expected", [
+    (None, ["01 [Tutorial] Games.pdf", "02_handout.pdf", "02_handout.pdf"]),
+    ("title", ["01-tutorial-games.pdf", "recitation-02.pdf", "exercise-02-losung.pdf"])])
 def test_moodle_names(tmp_path, names, expected):
     cfg_file = tmp_path / "coursesync.yaml"
     cfg_file.write_text(f"root: {tmp_path}\nsemester_start: 2026-09-14\ncourses: {{c: {{}}}}\n")

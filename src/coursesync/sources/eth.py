@@ -127,8 +127,8 @@ def sync_moodle(ctx: Ctx, course, src: dict) -> list[Item]:
     seen = ctx.ledger.bases(course.slug)
     items = []
     for u, (name, title) in files.items():
-        if src.get("names") == "title" and title:  # file names on Moodle often repeat across sections, titles don't
-            name = slug(title) + Path(name).suffix.lower()
+        if src.get("names") == "title":  # file names on Moodle often repeat across sections, titles don't
+            name = slug(title or Path(name).stem) + Path(name).suffix.lower()  # files in a Moodle folder have no title
         name = safe_name(name)
         if u in seen or name in have:
             continue
