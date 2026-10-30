@@ -29,9 +29,10 @@ type is generic.
   names, and sorts files into subfolders by name. A course can also have its own `semester_start`.
   `names: title` on a Moodle source names files after their Moodle title, so `02_handout.pdf` used twice
   becomes `recitation-02.pdf` and `exercise-02.pdf`.
-- **Videos optional.** `videos: false` (for everything, a course or a source) keeps only the transcript. A video
-  is still downloaded to transcribe it, and deleted once its transcript exists. If transcription fails, the
-  video stays and the next run retries.
+- **Videos optional.** `videos: false` (for everything, a course or a source) keeps only the transcript, taken
+  straight from the video portal's captions or Zoom's transcript, so no video is fetched. Only a recording with
+  neither is downloaded and transcribed with Whisper (`transcribe: enabled`), then deleted once its transcript
+  exists. If that fails, the video stays and the next run retries.
 - **Hands-off.** `coursesync timer install` runs it daily in the background (never opens a window; it
   notifies you when a login is needed).
 - **Scriptable.** Every run writes a JSON manifest of what's new, and can call your own command with it
@@ -65,6 +66,7 @@ coursesync run --dry-run        # what would be fetched
 coursesync run                  # fetch (a login window opens if needed)
 coursesync status               # last run + what's tracked
 coursesync login ml --host example.ethz.ch   # store a course-website password once (netrc, 600)
+coursesync autologin            # store your ETH login for unattended runs (needs `auto_login: true`)
 coursesync timer install --at 19:00          # daily background sync (systemd user timer)
 coursesync import have.jsonl    # mark things you already have, when switching from another setup
 ```

@@ -1,6 +1,6 @@
-"""Optional: transcribe new recordings with faster-whisper (`pip install coursesync[transcribe]`).
+"""Transcripts of recordings: from existing captions, or with faster-whisper (`pip install coursesync[transcribe]`).
 
-With `videos: false` the video is removed once its transcript exists. Writes next to the video: <name>.transcript.json ({segments: [[start, end, text]], duration, language, model})
+Writes next to the video: <name>.transcript.json ({segments: [[start, end, text]], duration, language, model})
 and <name>.transcript.md (readable, a timestamp every ~minute)."""
 
 from __future__ import annotations
