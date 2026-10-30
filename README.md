@@ -36,6 +36,8 @@ type is generic.
 | `moodle_zoom` | Zoom recording links in a Moodle page's tables (lecture and tutorial tables) | university |
 | `web` | every file linked from a web page matching a pattern | none, or a stored course password (`coursesync login`) |
 | `git` | a course repository, cloned and pulled | your SSH key |
+| `vis` | past exams, official solutions and the community answers (as Markdown) from Community Solutions: exams.vis.ethz.ch, exams.vmp.ethz.ch | university |
+| `amiv` | AMIV study documents for a lecture: past exams, summaries, cheat sheets | AMIV (ETH account) |
 | `zoom_readme` | a repo whose README lists `[Week 03 (01.10.2026)](https://…zoom.us/rec/share/…)` | your SSH key; Zoom links are public |
 
 ## Install

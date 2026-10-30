@@ -74,6 +74,31 @@ class Browser:
             return False
         return r.status == 200
 
+    def local_storage(self, origin: str, key: str) -> str | None:
+        """A value the site keeps in its local storage (e.g. a login token), from the saved session."""
+        for o in self.ctx.storage_state().get("origins", []):
+            if o["origin"] == origin:
+                for item in o.get("localStorage", []):
+                    if item["name"] == key:
+                        return item["value"].strip('"')
+        return None
+
+    def community_ok(self, site: str) -> bool:
+        try:
+            return bool(self.ctx.request.get(f"{site}/api/auth/me/").json().get("loggedin"))
+        except Exception:
+            return False
+
+    def amiv_ok(self) -> bool:
+        tok = self.local_storage("https://amiv.ethz.ch", "auth:token")
+        if not tok:
+            return False
+        try:
+            return self.ctx.request.get("https://api.amiv.ethz.ch/studydocuments?max_results=1",
+                                        headers={"Authorization": tok}).ok
+        except Exception:
+            return False
+
     def wait_for_logins(self, checks: dict, login_pages: dict, timeout_min: int, on_open=None) -> list[str]:
         """Open a visible window with the login pages of the failing checks; return what is still logged out."""
         missing = [k for k, ok in checks.items() if not ok()]
