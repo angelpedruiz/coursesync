@@ -5,3 +5,4 @@ __pycache__/
 dist/
 coursesync.yaml
 *.netrc
+secrets.yaml
