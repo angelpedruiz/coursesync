@@ -40,8 +40,8 @@ type is generic.
 
 ## Install
 ```bash
-uv tool install "git+https://github.com/<you>/coursesync"            # or: pipx install …
-uv tool install "coursesync[transcribe] @ git+https://github.com/<you>/coursesync"   # with transcription
+uv tool install "git+https://github.com/moubipoch/coursesync"            # or: pipx install …
+uv tool install "coursesync[transcribe] @ git+https://github.com/moubipoch/coursesync"   # with transcription
 ```
 It uses your installed Google Chrome; without Chrome run `playwright install chromium` once.
 
