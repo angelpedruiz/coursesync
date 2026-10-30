@@ -23,6 +23,11 @@ type is generic.
 - **Named by week.** Recordings become `L07.mp4` (`L07b` for a second session, `L07-tut` for a tutorial)
   from their date and your `semester_start`. Files get a week from optional label rules.
 - **Past exams** (`exam|final|midterm|…` in the name) go to `past_exams/`.
+- **Organized your way, per course.** An optional `layout` block changes a course's folders and recording
+  names, and sorts files into subfolders by name. A course can also have its own `semester_start`.
+- **Videos optional.** `videos: false` (for everything, a course or a source) keeps only the transcript. A video
+  is still downloaded to transcribe it, and deleted once its transcript exists. If transcription fails, the
+  video stays and the next run retries.
 - **Hands-off.** `coursesync timer install` runs it daily in the background (never opens a window; it
   notifies you when a login is needed).
 - **Scriptable.** Every run writes a JSON manifest of what's new, and can call your own command with it
