@@ -15,7 +15,14 @@ from urllib.parse import urlsplit
 
 WAYF_HOST = "wayf.switch.ch"
 ETH_IDP = "https://aai-logon.ethz.ch/idp/shibboleth"
-LOGIN_HOST = "access.ethz.ch"
+LOGIN_FORMS = {"access.ethz.ch": ("/", "input[autocomplete=username]"),  # the only pages a password is typed on
+               "ethz.ch": ("/login/", "input[name=j_username]")}         # (host: path, username field)
+
+
+class LoginRejected(Exception):
+    """Raised at once, so a wrong stored password is never tried again on another site and locks the account."""
+
+
 TOBIRA_QUERY = ("query($p:String!){ realmByPath(path:$p){ blocks { ... on SeriesBlock { series { entries { __typename "
                 "... on AuthorizedEvent { title syncedData { startTime } authorizedData { tracks { uri mimetype resolution } "
                 "captions { uri } } } } } } } } }")
@@ -86,22 +93,27 @@ class Browser:
         return r.status == 200
 
     def auto_login(self, url: str, username: str, password: str) -> None:
-        """Log in with stored credentials: typed only on the ETH login page, never on any other host."""
+        """Log in with stored credentials: typed only on ETH's own login forms, never on any other page."""
         page = self.ctx.new_page()
         try:
-            page.goto(url, wait_until="domcontentloaded")
+            page.goto(url, wait_until="networkidle")
             if urlsplit(page.url).hostname == WAYF_HOST:  # the university picker keeps its real list hidden
                 page.eval_on_selector("#userIdPSelection", f"e => {{ e.value = '{ETH_IDP}' }}")
                 page.eval_on_selector("#IdPList", "f => { const s = document.createElement('input'); s.type = 'hidden';"
                                                   " s.name = 'Select'; s.value = 'Select'; f.appendChild(s); f.submit() }")
                 page.wait_for_url(lambda u: urlsplit(u).hostname != WAYF_HOST)
-            page.wait_for_load_state("domcontentloaded")
-            if urlsplit(page.url).hostname != LOGIN_HOST:
-                return  # already signed in, or a page we don't know: not one to type a password into
-            page.fill("input[autocomplete=username]", username)
+                page.wait_for_load_state("networkidle")  # single sign-on redirects pass through other hosts
+            where = urlsplit(page.url)
+            path, username_field = LOGIN_FORMS.get(where.hostname, ("", ""))
+            if not path or not where.path.startswith(path) or not page.query_selector("input[type=password]"):
+                return  # signed in, or a page we don't know or a consent page: not one to type a password into
+            page.fill(username_field, username)
             page.fill("input[type=password]", password)
-            page.click("button[type=submit]")
+            page.press("input[type=password]", "Enter")
             page.wait_for_load_state("networkidle")
+            after = urlsplit(page.url)
+            if after.hostname == where.hostname and after.path.startswith(where.path):
+                raise LoginRejected("ETH did not accept the stored login: run `coursesync autologin` again")
         finally:
             page.close()
 

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from coursesync.browser import Browser
+from coursesync.browser import Browser, LoginRejected
 from coursesync.config import ConfigError, load, load_secrets
 from coursesync.ledger import Ledger
 from coursesync.run import run
@@ -350,8 +350,9 @@ def test_tobira_captions_replace_the_video(tmp_path, monkeypatch, captions, vide
 
 
 class FakePage:
-    def __init__(self, url):
-        self.url, self.filled, self.closed = url, [], False
+    def __init__(self, url, has_password_field=True, url_after_login="https://moodle.test/my/"):
+        self.url, self.filled, self.closed, self.has_password_field = url, [], False, has_password_field
+        self.url_after_login = url_after_login
 
     def goto(self, url, **kw):
         pass
@@ -359,8 +360,11 @@ class FakePage:
     def fill(self, selector, value):
         self.filled.append(value)
 
-    def click(self, selector):
-        pass
+    def query_selector(self, selector):
+        return self.has_password_field
+
+    def press(self, selector, key):
+        self.url = self.url_after_login or self.url
 
     def wait_for_load_state(self, state):
         pass
@@ -369,15 +373,28 @@ class FakePage:
         self.closed = True
 
 
-@pytest.mark.parametrize("url, typed", [("https://access.ethz.ch/idpauthapp/", ["me", "pw"]),
-                                        ("https://access.ethz.ch.evil.test/idpauthapp/", []),
-                                        ("https://moodle-app2.let.ethz.ch/my/", [])])
-def test_auto_login_types_only_on_the_eth_login_page(tmp_path, url, typed):
-    page = FakePage(url)
+@pytest.mark.parametrize("url, field, typed", [
+    ("https://access.ethz.ch/idpauthapp/", True, ["me", "pw"]),
+    ("https://ethz.ch/login/en.html", True, ["me", "pw"]),
+    ("https://ethz.ch/en/some-page.html", True, []),                    # right host, not the login page
+    ("https://access.ethz.ch/switch-aai/SingleSignOnService", False, []),  # the consent page
+    ("https://access.ethz.ch.evil.test/idpauthapp/", True, []),
+    ("https://moodle-app2.let.ethz.ch/my/", True, [])])
+def test_auto_login_types_only_on_eth_login_forms(tmp_path, url, field, typed):
+    page = FakePage(url, field)
     b = Browser(tmp_path)
     b.ctx = SimpleNamespace(new_page=lambda: page)
     b.auto_login("https://video.ethz.ch/~session", "me", "pw")
     assert page.filled == typed and page.closed
+
+
+def test_auto_login_reports_a_rejected_login(tmp_path):
+    page = FakePage("https://access.ethz.ch/idpauthapp/", url_after_login=None)  # the form answers on the same page
+    b = Browser(tmp_path)
+    b.ctx = SimpleNamespace(new_page=lambda: page)
+    with pytest.raises(LoginRejected, match="coursesync autologin"):
+        b.auto_login("https://moodle.test/login", "me", "pw")
+    assert page.closed
 
 
 def test_secrets_must_be_private(tmp_path):

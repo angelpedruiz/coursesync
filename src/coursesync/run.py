@@ -87,7 +87,7 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
     login_sources = [(c, s) for c in courses for s in c.sources if s.get("type") in LOGIN]
     LOGIN_SITE_DYNAMIC: dict = {}
     if browser and login_sources:
-        from coursesync.browser import Browser
+        from coursesync.browser import Browser, LoginRejected
         print("Sources behind your login…", flush=True)
         b = Browser(cfg.state_dir).start(headless=True)
         ctx.browser = b
@@ -121,7 +121,7 @@ def run(cfg: Config, *, only: list[str] | None = None, browser: bool = True, int
                     for site in expired:
                         b.auto_login(pages[site], username, password)
                 except Exception as e:  # only the type: never risk a password in a report
-                    msg = str(e) if isinstance(e, ConfigError) else f"{type(e).__name__} on the login page"
+                    msg = str(e) if isinstance(e, (ConfigError, LoginRejected)) else f"{type(e).__name__} on the login page"
                     man.problem("login", f"automatic login failed: {msg}")
             if interactive:
                 def opened(missing):
