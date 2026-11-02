@@ -111,11 +111,16 @@ class Browser:
             page.fill("input[type=password]", password)
             page.press("input[type=password]", "Enter")
             page.wait_for_load_state("networkidle")
+            form_back = True  # the old form can still be on screen at first: rejected only if it stays
+            for _ in range(10):
+                try:  # a login that leads straight to a file (ethz.ch) keeps the login URL, so the form decides
+                    form_back = bool(page.query_selector("input[type=password]"))
+                except Exception:
+                    form_back = False
+                if not form_back:
+                    break
+                page.wait_for_timeout(1000)
             after = urlsplit(page.url)
-            try:  # a login that leads straight to a file (ethz.ch) keeps the login URL, so the form decides
-                form_back = bool(page.query_selector("input[type=password]"))
-            except Exception:
-                form_back = False
             if after.hostname == where.hostname and after.path.startswith(where.path) and form_back:
                 raise LoginRejected("ETH did not accept the stored login: run `coursesync autologin` again")
         finally:

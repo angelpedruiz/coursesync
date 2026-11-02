@@ -369,6 +369,9 @@ class FakePage:
     def wait_for_load_state(self, state):
         pass
 
+    def wait_for_timeout(self, ms):
+        pass
+
     def close(self):
         self.closed = True
 
