@@ -353,6 +353,8 @@ class FakePage:
     def __init__(self, url, has_password_field=True, url_after_login="https://moodle.test/my/"):
         self.url, self.filled, self.closed, self.has_password_field = url, [], False, has_password_field
         self.url_after_login = url_after_login
+        self.consent_button = self.remember = None
+        self.body = ""
 
     def goto(self, url, **kw):
         pass
@@ -361,7 +363,14 @@ class FakePage:
         self.filled.append(value)
 
     def query_selector(self, selector):
+        if "Zustimmen" in selector:
+            return self.consent_button
+        if "checkbox" in selector:
+            return self.remember
         return self.has_password_field
+
+    def inner_text(self, selector):
+        return self.body
 
     def press(self, selector, key):
         self.url = self.url_after_login or self.url
@@ -370,6 +379,9 @@ class FakePage:
         pass
 
     def wait_for_timeout(self, ms):
+        pass
+
+    def on(self, event, handler):
         pass
 
     def close(self):
@@ -386,7 +398,7 @@ class FakePage:
 def test_auto_login_types_only_on_eth_login_forms(tmp_path, url, field, typed):
     page = FakePage(url, field)
     b = Browser(tmp_path)
-    b.ctx = SimpleNamespace(new_page=lambda: page)
+    b.ctx = SimpleNamespace(new_page=lambda: page, cookies=lambda url: [])
     b.auto_login("https://video.ethz.ch/~session", "me", "pw")
     assert page.filled == typed and page.closed
 
@@ -394,7 +406,7 @@ def test_auto_login_types_only_on_eth_login_forms(tmp_path, url, field, typed):
 def test_auto_login_reports_a_rejected_login(tmp_path):
     page = FakePage("https://access.ethz.ch/idpauthapp/", url_after_login=None)  # the form answers on the same page
     b = Browser(tmp_path)
-    b.ctx = SimpleNamespace(new_page=lambda: page)
+    b.ctx = SimpleNamespace(new_page=lambda: page, cookies=lambda url: [])
     with pytest.raises(LoginRejected, match="coursesync autologin"):
         b.auto_login("https://moodle.test/login", "me", "pw")
     assert page.closed
@@ -408,7 +420,50 @@ def test_auto_login_accepts_a_login_that_stays_on_the_login_url(tmp_path):
 
     page.press = press
     b = Browser(tmp_path)
-    b.ctx = SimpleNamespace(new_page=lambda: page)
+    b.ctx = SimpleNamespace(new_page=lambda: page, cookies=lambda url: [])
+    b.auto_login("https://ethz.ch/content/dam/x.pdf", "me", "pw")
+    assert page.filled == ["me", "pw"] and page.closed
+
+
+class FakeControl:
+    def __init__(self):
+        self.clicked = self.checked = False
+
+    def click(self):
+        self.clicked = True
+
+    def check(self):
+        self.checked = True
+
+    def is_checked(self):
+        return self.checked
+
+
+@pytest.mark.parametrize("service, approved", [("https://tobira.ethz.ch/shibboleth", True),
+                                               ("https://moodle-app2.let.ethz.ch/shibboleth", True),
+                                               ("https://other.example.ch/shibboleth", False)])
+def test_auto_login_approves_data_sharing_only_for_known_services(tmp_path, service, approved):
+    page = FakePage("https://access.ethz.ch/switch-aai/SingleSignOnService", has_password_field=False)
+    page.consent_button, page.remember = FakeControl(), FakeControl()
+    page.body = f"Datenweitergabe bestätigen Nach erfolgreicher Anmeldung möchte der Dienst {service} folgende Daten"
+    b = Browser(tmp_path)
+    b.ctx = SimpleNamespace(new_page=lambda: page, cookies=lambda url: [])
+    if approved:
+        b.auto_login("https://video.ethz.ch/~session", "me", "pw")
+        assert page.consent_button.clicked and page.remember.checked
+    else:
+        with pytest.raises(LoginRejected, match="other.example.ch"):
+            b.auto_login("https://video.ethz.ch/~session", "me", "pw")
+        assert not page.consent_button.clicked
+    assert page.filled == [] and page.closed  # no password is typed on the consent page
+
+
+def test_auto_login_accepts_a_login_whose_form_stays_but_that_sets_a_login_cookie(tmp_path):
+    page = FakePage("https://ethz.ch/login/en.html", url_after_login=None)  # stays, while a PDF downloads
+    jar = []
+    page.press = lambda selector, key: jar.append({"name": "login-token"})
+    b = Browser(tmp_path)
+    b.ctx = SimpleNamespace(new_page=lambda: page, cookies=lambda url: list(jar))
     b.auto_login("https://ethz.ch/content/dam/x.pdf", "me", "pw")
     assert page.filled == ["me", "pw"] and page.closed
 

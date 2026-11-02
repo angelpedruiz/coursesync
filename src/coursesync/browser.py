@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -17,6 +18,9 @@ WAYF_HOST = "wayf.switch.ch"
 ETH_IDP = "https://aai-logon.ethz.ch/idp/shibboleth"
 LOGIN_FORMS = {"access.ethz.ch": ("/", "input[autocomplete=username]"),  # the only pages a password is typed on
                "ethz.ch": ("/login/", "input[name=j_username]")}         # (host: path, username field)
+# ETH asks to confirm sharing account data with a service ("Datenweitergabe bestätigen"). Angel approved these two;
+# any other service is left for Angel to approve by hand.
+CONSENT_SERVICES = {"https://moodle-app2.let.ethz.ch/shibboleth", "https://tobira.ethz.ch/shibboleth"}
 
 
 class LoginRejected(Exception):
@@ -106,7 +110,13 @@ class Browser:
             where = urlsplit(page.url)
             path, username_field = LOGIN_FORMS.get(where.hostname, ("", ""))
             if not path or not where.path.startswith(path) or not page.query_selector("input[type=password]"):
-                return  # signed in, or a page we don't know or a consent page: not one to type a password into
+                self._consent(page)  # already signed in to ETH: at most the data-sharing question is left
+                return  # signed in, or a page we don't know: not one to type a password into
+            login_url = f"{where.scheme}://{where.hostname}/"
+            cookies_before = {c["name"] for c in self.ctx.cookies(login_url)}
+            refused = []  # a wrong password answers 401/403 (access.ethz.ch: 403 on the form)
+            page.on("response", lambda r: refused.append(r.status) if r.status in (401, 403) and
+                    urlsplit(r.url).hostname == where.hostname else None)
             page.fill(username_field, username)
             page.fill("input[type=password]", password)
             page.press("input[type=password]", "Enter")
@@ -121,10 +131,29 @@ class Browser:
                     break
                 page.wait_for_timeout(1000)
             after = urlsplit(page.url)
-            if after.hostname == where.hostname and after.path.startswith(where.path) and form_back:
+            logged_in = {c["name"] for c in self.ctx.cookies(login_url)} - cookies_before  # e.g. ethz.ch's
+            if form_back and after.hostname == where.hostname and after.path.startswith(where.path) and \
+                    (refused or not logged_in):  # login-token, set while the page downloads the protected file
                 raise LoginRejected("ETH did not accept the stored login: run `coursesync autologin` again")
+            self._consent(page)
         finally:
             page.close()
+
+    @staticmethod
+    def _consent(page) -> None:
+        """Approve ETH's data-sharing question for the services in CONSENT_SERVICES, ticking "always approve"."""
+        approve = page.query_selector("button:has-text('Zustimmen'), button:has-text('Accept')")
+        if not approve or urlsplit(page.url).hostname != "access.ethz.ch":
+            return
+        m = re.search(r"(?:Dienst|service)\s+(\S+)\s+(?:folgende|would)", page.inner_text("body"))
+        service = m[1] if m else "an unknown service"
+        if service not in CONSENT_SERVICES:
+            raise LoginRejected(f"ETH asks to share your data with {service}: approve it yourself in `coursesync run`")
+        remember = page.query_selector("input[type=checkbox]")
+        if remember and not remember.is_checked():
+            remember.check()
+        approve.click()
+        page.wait_for_load_state("networkidle")
 
     def local_storage(self, origin: str, key: str) -> str | None:
         """A value the site keeps in its local storage (e.g. a login token), from the saved session."""
