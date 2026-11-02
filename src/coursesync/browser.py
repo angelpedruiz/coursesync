@@ -112,7 +112,11 @@ class Browser:
             page.press("input[type=password]", "Enter")
             page.wait_for_load_state("networkidle")
             after = urlsplit(page.url)
-            if after.hostname == where.hostname and after.path.startswith(where.path):
+            try:  # a login that leads straight to a file (ethz.ch) keeps the login URL, so the form decides
+                form_back = bool(page.query_selector("input[type=password]"))
+            except Exception:
+                form_back = False
+            if after.hostname == where.hostname and after.path.startswith(where.path) and form_back:
                 raise LoginRejected("ETH did not accept the stored login: run `coursesync autologin` again")
         finally:
             page.close()

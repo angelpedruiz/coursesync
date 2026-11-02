@@ -397,6 +397,19 @@ def test_auto_login_reports_a_rejected_login(tmp_path):
     assert page.closed
 
 
+def test_auto_login_accepts_a_login_that_stays_on_the_login_url(tmp_path):
+    page = FakePage("https://ethz.ch/login/en.html", url_after_login=None)  # redirected to a PDF download
+
+    def press(selector, key):
+        page.has_password_field = False
+
+    page.press = press
+    b = Browser(tmp_path)
+    b.ctx = SimpleNamespace(new_page=lambda: page)
+    b.auto_login("https://ethz.ch/content/dam/x.pdf", "me", "pw")
+    assert page.filled == ["me", "pw"] and page.closed
+
+
 def test_secrets_must_be_private(tmp_path):
     f = tmp_path / "secrets.yaml"
     f.write_text("username: me\npassword: pw\n")
